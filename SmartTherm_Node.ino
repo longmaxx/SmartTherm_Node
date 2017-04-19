@@ -2,9 +2,15 @@
 #include <DallasTemperature.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
+#include <Ticker.h>
 #include "SensorData.h"
 
-//Ticker ticker;// task timer
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
+
+ESP8266WebServer server ( 80 );
+
+Ticker ticker;// task timer
 DS1307 RTC1(5, 4);
 OneWire Wire1Port(12);
 DallasTemperature DT(&Wire1Port);
@@ -29,11 +35,27 @@ void setup() {
   //wifi setup
   WiFi.mode(WIFI_STA);
   WiFi.softAP("KotNet", "MyKotNet123");
+  waitWiFiConnected();
+  Serial.print ( "IP address: " );
+  Serial.println ( WiFi.localIP() );
+  //server setup
+  if ( MDNS.begin ( "esp8266" ) ) {
+    Serial.println ( "MDNS responder started" );
+  }
+  server.on ( "/", handleRoot );
+  server.onNotFound ( handleNotFound );
+  server.begin();
+  //ticker
+  ticker.attach(60,setHttpSensorJobFlag);
 }
 
 void loop() {
-  HttpSensorJob();
-  ESP.deepSleep(5*60*1000*1000,RF_DEFAULT);
+  if (flag_HttpSensorJob){
+    flag_HttpSensorJob = false;
+    HttpSensorJob();
+  }
+  //ESP.deepSleep(5*60*1000*1000,RF_DEFAULT);
+  server.handleClient();
 }
 
 void setHttpSensorJobFlag()
@@ -56,11 +78,7 @@ void HttpSensorJob(){
 
 void sendHttpRequest()
 {
-  int i=100;
-  while((WiFi.status() != WL_CONNECTED) && (i>0)){
-    delay(100);
-    i--;
-  }
+  waitWiFiConnected();
   
   if (WiFi.status() == WL_CONNECTED){
     String Params = "&device_name=" + DeviceName +
@@ -82,6 +100,15 @@ void sendHttpRequest()
     http.end();
   }else{
     Serial.println(F("Error: wifi not connected."));
+  }
+}
+
+void waitWiFiConnected()
+{
+  int i=100;
+  while((WiFi.status() != WL_CONNECTED) && (i>0)){
+    delay(100);
+    i--;
   }
 }
 
@@ -113,3 +140,40 @@ String firstZero(int val)
   }
 }
 
+void handleRoot() {
+  char temp[400];
+  snprintf ( temp, 400,
+
+"<html>\
+  <head>\
+    <meta http-equiv='refresh' content='5'/>\
+    <title>ESP8266 Demo</title>\
+    <style>\
+      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
+    </style>\
+  </head>\
+  <body>\
+    <h1>Hello from ESP8266!</h1>\
+  </body>\
+</html>"
+  );
+  server.send ( 200, "text/html", temp );
+
+}
+
+void handleNotFound() {
+  String message = "File Not Found\n\n";
+  message += "URI: ";
+  message += server.uri();
+  message += "\nMethod: ";
+  message += ( server.method() == HTTP_GET ) ? "GET" : "POST";
+  message += "\nArguments: ";
+  message += server.args();
+  message += "\n";
+
+  for ( uint8_t i = 0; i < server.args(); i++ ) {
+    message += " " + server.argName ( i ) + ": " + server.arg ( i ) + "\n";
+  }
+
+  server.send ( 404, "text/plain", message );
+}
