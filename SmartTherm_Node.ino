@@ -9,6 +9,7 @@
 
 #include "Page_Root.h"
 #include "Page_SetName.h"
+#include "Page_SetDate.h"
 
 ESP8266WebServer server ( 80 );
 
@@ -143,6 +144,8 @@ void serverSetup()
     Serial.println ( "MDNS responder started" );
   }
   server.on ( "/", handleRoot );
+  server.on ( "/setname", handleSetName );
+  server.on ( "/setdate", handleSetDate );
   server.onNotFound ( handleNotFound );
   server.begin();  
 }
@@ -151,24 +154,38 @@ void handleRoot()
 {
   String data = ROOT_page;
   data.replace("@@DEVNAME@@", DeviceName);
+  data.replace("@@CURDATE@@", getDateTimeUrl(RTC1.getTime()));
   data.replace("@@LDATE@@", getDateTimeUrl(lastSensorData.Timestamp));
   data.replace("@@LCELSIUM@@", (String)lastSensorData.Celsium);
-  server.send ( 200, "text/html", data );
+  server.send ( 200, "text/html; charset=utf-8", data );
 }
 
 void handleSetName()
 {
-  if (server.method() != HTTP_POST){
-    String data = SETNAME_page;
-    data.replace("@@DEVNAME@@", DeviceName);
-    server.send ( 200, "text/html", data );
-  }else{
+  String data = SETNAME_page;
+  if (server.method() == HTTP_POST){
     // form submit
     String newName = server.arg("devname");
     if (newName != ""){
       DeviceName = newName;
     }
+    data.replace("@@RESULT@@", "Data were saved.");
   }
+  data.replace("@@RESULT@@", "");
+  data.replace("@@DEVNAME@@", DeviceName);
+  server.send ( 200, "text/html; charset=utf-8", data );
+}
+
+void handleSetDate()
+{
+  String data = SETDATE_page;
+  if (server.method() == HTTP_POST){
+    RTC1.setDate(server.arg("day").toInt(), server.arg("month").toInt(), server.arg("year").toInt());
+    RTC1.setTime(server.arg("hour").toInt(), server.arg("minute").toInt(),0);
+    data.replace("@@RESULT@@", "Date was set.");
+  }
+  data.replace("@@RESULT@@", "");
+  server.send ( 200, "text/html; charset=utf-8", data );
 }
 
 void handleNotFound() 

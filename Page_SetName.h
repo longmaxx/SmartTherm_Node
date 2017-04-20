@@ -4,11 +4,12 @@ const char SETNAME_page[] PROGMEM = R"=====(
 Name Settings
 </TITLE>
 <BODY>
+<a href="./">Главная</a>>Смена имени устройства<br>
 <FORM method="post">
-Set new device name:<br>
 <INPUT TYPE=TEXT value="@@DEVNAME@@" name=devname>
 <INPUT TYPE=SUBMIT name=submit>
 </FORM>
+<h1>@@RESULT@@</h1>
 </BODY>
 </HTML>
 )=====";
