@@ -7,7 +7,8 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
 
-#include "RootPage.h"
+#include "Page_Root.h"
+#include "Page_SetName.h"
 
 ESP8266WebServer server ( 80 );
 
@@ -146,16 +147,32 @@ void serverSetup()
   server.begin();  
 }
 
-void handleRoot() {
+void handleRoot() 
+{
   String data = ROOT_page;
   data.replace("@@DEVNAME@@", DeviceName);
   data.replace("@@LDATE@@", getDateTimeUrl(lastSensorData.Timestamp));
   data.replace("@@LCELSIUM@@", (String)lastSensorData.Celsium);
   server.send ( 200, "text/html", data );
-
 }
 
-void handleNotFound() {
+void handleSetName()
+{
+  if (server.method() != HTTP_POST){
+    String data = SETNAME_page;
+    data.replace("@@DEVNAME@@", DeviceName);
+    server.send ( 200, "text/html", data );
+  }else{
+    // form submit
+    String newName = server.arg("devname");
+    if (newName != ""){
+      DeviceName = newName;
+    }
+  }
+}
+
+void handleNotFound() 
+{
   String message = "File Not Found\n\n";
   message += "URI: ";
   message += server.uri();
