@@ -39,12 +39,7 @@ void setup() {
   Serial.print ( "IP address: " );
   Serial.println ( WiFi.localIP() );
   //server setup
-  if ( MDNS.begin ( "esp8266" ) ) {
-    Serial.println ( "MDNS responder started" );
-  }
-  server.on ( "/", handleRoot );
-  server.onNotFound ( handleNotFound );
-  server.begin();
+  serverSetup();
   //ticker
   ticker.attach(60,setHttpSensorJobFlag);
 }
@@ -138,6 +133,16 @@ String firstZero(int val)
   }else{
     return (String)val;
   }
+}
+//=====================================Web Server===========================================================
+void serverSetup()
+{
+  if ( MDNS.begin ( "esp8266" ) ) {
+    Serial.println ( "MDNS responder started" );
+  }
+  server.on ( "/", handleRoot );
+  server.onNotFound ( handleNotFound );
+  server.begin();  
 }
 
 void handleRoot() {
