@@ -4,9 +4,10 @@
 #include <ESP8266HTTPClient.h>
 #include <Ticker.h>
 #include "SensorData.h"
-
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
+
+#include "RootPage.h"
 
 ESP8266WebServer server ( 80 );
 
@@ -146,23 +147,11 @@ void serverSetup()
 }
 
 void handleRoot() {
-  char temp[400];
-  snprintf ( temp, 400,
-
-"<html>\
-  <head>\
-    <meta http-equiv='refresh' content='5'/>\
-    <title>ESP8266 Demo</title>\
-    <style>\
-      body { background-color: #cccccc; font-family: Arial, Helvetica, Sans-Serif; Color: #000088; }\
-    </style>\
-  </head>\
-  <body>\
-    <h1>Hello from ESP8266!</h1>\
-  </body>\
-</html>"
-  );
-  server.send ( 200, "text/html", temp );
+  String data = ROOT_page;
+  data.replace("@@DEVNAME@@", DeviceName);
+  data.replace("@@LDATE@@", getDateTimeUrl(lastSensorData.Timestamp));
+  data.replace("@@LCELSIUM@@", (String)lastSensorData.Celsium);
+  server.send ( 200, "text/html", data );
 
 }
 
