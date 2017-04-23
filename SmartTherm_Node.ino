@@ -33,6 +33,7 @@ void setup() {
   Serial.println("");
   Serial.println("Setup...");
   // init onewire DS18b20
+  DT.setOneWire(&Wire1Port);
   DT.begin();
   DT.getAddress(&DS18B20Addr,0);
   //wifi setup
@@ -113,10 +114,6 @@ void waitWiFiConnected()
 void requestTemperature()
 {
   DT.requestTemperatures();
-  DT.setWaitForConversion(true);
-  while(!DT.getWaitForConversion()){
-    delay(500);
-  };
 }
 
 String getDateTimeUrl(Time t)
@@ -184,7 +181,14 @@ void handleSetDate()
     RTC1.setTime(server.arg("hour").toInt(), server.arg("minute").toInt(),0);
     data.replace("@@RESULT@@", "Date was set.");
   }
+  Time t = RTC1.getTime();
   data.replace("@@RESULT@@", "");
+  data.replace("@@YEAR@@", (String)t.year);
+  data.replace("@@MONTH@@", (String)t.mon);
+  data.replace("@@DAY@@", (String)t.date);
+  data.replace("@@HOUR@@", (String)t.hour);
+  data.replace("@@MINUTE@@", (String)t.min);
+  
   server.send ( 200, "text/html; charset=utf-8", data );
 }
 
