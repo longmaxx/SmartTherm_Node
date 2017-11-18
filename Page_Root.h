@@ -4,11 +4,16 @@ const char ROOT_page[] PROGMEM = R"=====(
 Smart control: @@DEVNAME@@
 </TITLE>
 <BODY>
-Последняя дата: @@CURDATE@@<br><br>
-
-Последняя дата: @@LDATE@@<br>
-Последняя температура: @@LCELSIUM@@<br><br>
-
+<h2>Device name: @@DEVNAME@@</h2>
+Текущая дата: @@CURDATE@@
+<table style="width:50%;border:double;margin:20px;">
+<tr>
+<th>Последняя дата</th><td>@@LDATE@@</td>
+</tr>
+<tr>
+<th>Последнее значение температуры</th><td>@@LCELSIUM@@</td>
+</tr>
+</table>
 <b><u>Доступые опции</u></b><br><br>
 
 <a href="./setname">Смена имени устройства</a><br>
