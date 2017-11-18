@@ -11,13 +11,15 @@
 #include "Page_SetName.h"
 #include "Page_SetDate.h"
 
+
+
 ESP8266WebServer server ( 80 );
 
 Ticker ticker;// task timer
 DS1307 RTC1(5, 4);
 OneWire Wire1Port(12);
 DallasTemperature DT(&Wire1Port);
-
+  
 uint8_t DS18B20Addr;// address of DS19b20 1-wire thermometer  
 SensorData lastSensorData;
 boolean flag_HttpSensorJob = true;// timer flag for refresh Sensor data and send; flag for use by Ticker
@@ -42,19 +44,33 @@ void setup() {
   waitWiFiConnected();
   Serial.print ( "IP address: " );
   Serial.println ( WiFi.localIP() );
+  WiFi.printDiag(Serial);
   //server setup
   serverSetup();
   //ticker
   ticker.attach(60,setHttpSensorJobFlag);
+  
 }
 
 void loop() {
   if (flag_HttpSensorJob){
     flag_HttpSensorJob = false;
     HttpSensorJob();
+    analogWrite(15,200);
+    delay(1000);
+    analogWrite(15,800);
   }
-  //ESP.deepSleep(5*60*1000*1000,RF_DEFAULT);
   server.handleClient();
+    
+  if (getNeedGoSleep()){
+    ESP.deepSleep(5*60*1000*1000,RF_DEFAULT);
+  }
+
+}
+
+boolean getNeedGoSleep()
+{
+  return false;
 }
 
 void setHttpSensorJobFlag()
@@ -65,14 +81,34 @@ void setHttpSensorJobFlag()
 void HttpSensorJob(){
   requestTemperature();
   lastSensorData.Celsium = DT.getTempCByIndex(0); 
+  if (lastSensorData.Celsium == DEVICE_DISCONNECTED_C){
+    lastSensorData.stateCelsium = STATE_ERROR;
+  }
   lastSensorData.Timestamp = RTC1.getTime();
+  if (lastSensorData.Timestamp.mon == 0){
+    lastSensorData.stateTimestamp = STATE_ERROR;
+  }
   Serial.print(F("Time: "));
-  Serial.print(getDateTimeUrl(lastSensorData.Timestamp));
+  if (lastSensorData.stateTimestamp == STATE_OK){
+    Serial.print(getDateTimeUrl(lastSensorData.Timestamp));
+  }else
+  {
+    Serial.print("!!!RTC error");
+  }
   Serial.print(" => ");
-  Serial.print(lastSensorData.Celsium);
-  Serial.println("C");
-
-  sendHttpRequest();
+  if (lastSensorData.stateCelsium == STATE_OK){
+    Serial.print(lastSensorData.Celsium);
+    Serial.println("C");
+  }else{
+    Serial.println("!!!T_READ ERROR");
+  }
+  if ((lastSensorData.stateCelsium == STATE_OK)&&(lastSensorData.stateTimestamp == STATE_OK))
+  {
+    sendHttpRequest();
+  }else
+  {
+    Serial.println(F("Cancel post results to server due to errors"));
+  }
 }
 
 void sendHttpRequest()
