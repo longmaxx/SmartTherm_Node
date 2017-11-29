@@ -1,73 +1,101 @@
 #include <DS1307.h>
 #include <DallasTemperature.h>
+#include <SimpleDHT.h>
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <Ticker.h>
 #include "SensorData.h"
 #include <ESP8266WebServer.h>
-#include <ESP8266mDNS.h>
+//#include <ESP8266mDNS.h>
+#include <ESP8266WiFiMulti.h>
+
+SimpleDHT22 Dht;
+ESP8266WiFiMulti WiFiMulti;
 
 #include "Page_Root.h"
 #include "Page_SetName.h"
 #include "Page_SetDate.h"
 
+/*
+4  - RTC
+5  - RTC 
+12 - 1-Wire
+*/
+#define PIN_1WIRE 12
 
+String HostIP = "192.168.0.100:80";
+String Url = "/TMon2/web/index.php?r=temperatures/commit";
+String DeviceName = "nano";
 
 ESP8266WebServer server ( 80 );
 
 Ticker ticker;// task timer
 DS1307 RTC1(5, 4);
-OneWire Wire1Port(12);
+OneWire Wire1Port(PIN_1WIRE);
 DallasTemperature DT(&Wire1Port);
   
 uint8_t DS18B20Addr;// address of DS19b20 1-wire thermometer  
 SensorData lastSensorData;
 boolean flag_HttpSensorJob = true;// timer flag for refresh Sensor data and send; flag for use by Ticker
 
-
-String HostIP = "192.168.0.100:80";
-String Url = "/TMon2/web/index.php?r=temperatures/commit";
-String DeviceName = "nano";
-
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
   Serial.println("");
   Serial.println("Setup...");
-  // init onewire DS18b20
-  DT.setOneWire(&Wire1Port);
-  DT.begin();
-  DT.getAddress(&DS18B20Addr,0);
-  //wifi setup
-  WiFi.mode(WIFI_STA);
-  WiFi.softAP("KotNet", "MyKotNet123");
-  waitWiFiConnected();
-  Serial.print ( "IP address: " );
-  Serial.println ( WiFi.localIP() );
-  WiFi.printDiag(Serial);
-  //server setup
-  serverSetup();
+  initDS18B20();
+  initWifi();
+  initWebServer();
   //ticker
   ticker.attach(60,setHttpSensorJobFlag);
   
 }
 
 void loop() {
+  server.handleClient();
   if (flag_HttpSensorJob){
     flag_HttpSensorJob = false;
+    Serial.print ( "IP address: " );
+  Serial.println ( WiFi.localIP() );
     HttpSensorJob();
     analogWrite(15,200);
     delay(1000);
     analogWrite(15,800);
   }
-  server.handleClient();
+  
     
   if (getNeedGoSleep()){
     ESP.deepSleep(5*60*1000*1000,RF_DEFAULT);
   }
-
 }
 
+void initDS18B20()
+{
+  // init onewire DS18b20
+  DT.setOneWire(&Wire1Port);
+  DT.begin();
+  DT.getAddress(&DS18B20Addr,0);
+}
+void initWifi()
+{
+  //wifi setup
+  //WiFi.mode(WIFI_STA);
+//  WiFi.begin("KotNet", "MyKotNet123");
+  WiFiMulti.addAP("KotNet", "MyKotNet123");
+  waitWiFiConnected();
+  Serial.print ( "IP address: " );
+  Serial.println ( WiFi.localIP() );
+  WiFi.printDiag(Serial);
+}
+
+void waitWiFiConnected()
+{
+  int i=100;
+  while((WiFiMulti.run() != WL_CONNECTED) && (i>0)){
+    delay(100);
+    i--;
+  }
+}
 boolean getNeedGoSleep()
 {
   return false;
@@ -78,9 +106,33 @@ void setHttpSensorJobFlag()
   flag_HttpSensorJob = true;
 }
 
+void getSensorData()
+{
+  lastSensorData.stateHumidity = STATE_ERROR;
+  lastSensorData.stateCelsium = STATE_ERROR;
+  //try DHT22
+  byte t;
+  byte h;
+  int res = Dht.read(PIN_1WIRE,&t,&h,NULL);
+  Serial.println(res);
+  if (res == SimpleDHTErrSuccess){
+    lastSensorData.stateHumidity = STATE_OK;
+    lastSensorData.stateCelsium = STATE_OK;
+    lastSensorData.Celsium = t;
+    lastSensorData.Humidity = h;
+  }else{
+
+    // try DS18b20
+    requestTemperature();
+    lastSensorData.Celsium = DT.getTempCByIndex(0); 
+    if (lastSensorData.Celsium != DEVICE_DISCONNECTED_C){
+      lastSensorData.stateCelsium = STATE_OK;
+    }
+  }
+}
+
 void HttpSensorJob(){
-  requestTemperature();
-  lastSensorData.Celsium = DT.getTempCByIndex(0); 
+  getSensorData();
   if (lastSensorData.Celsium == DEVICE_DISCONNECTED_C){
     lastSensorData.stateCelsium = STATE_ERROR;
   }
@@ -138,15 +190,6 @@ void sendHttpRequest()
   }
 }
 
-void waitWiFiConnected()
-{
-  int i=100;
-  while((WiFi.status() != WL_CONNECTED) && (i>0)){
-    delay(100);
-    i--;
-  }
-}
-
 void requestTemperature()
 {
   DT.requestTemperatures();
@@ -171,11 +214,11 @@ String firstZero(int val)
   }
 }
 //=====================================Web Server===========================================================
-void serverSetup()
+void initWebServer()
 {
-  if ( MDNS.begin ( "esp8266" ) ) {
-    Serial.println ( "MDNS responder started" );
-  }
+  //if ( MDNS.begin ( "esp8266" ) ) {
+  //  Serial.println ( "MDNS responder started" );
+  //}
   server.on ( "/", handleRoot );
   server.on ( "/setname", handleSetName );
   server.on ( "/setdate", handleSetDate );
@@ -190,6 +233,7 @@ void handleRoot()
   data.replace("@@CURDATE@@", getDateTimeUrl(RTC1.getTime()));
   data.replace("@@LDATE@@", getDateTimeUrl(lastSensorData.Timestamp));
   data.replace("@@LCELSIUM@@", (String)lastSensorData.Celsium);
+  data.replace("@@LHUMIDITY@@", (String)lastSensorData.Humidity);
   server.send ( 200, "text/html; charset=utf-8", data );
 }
 

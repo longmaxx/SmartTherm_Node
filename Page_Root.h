@@ -11,7 +11,8 @@ Smart control: @@DEVNAME@@
 <th>Последняя дата</th><td>@@LDATE@@</td>
 </tr>
 <tr>
-<th>Последнее значение температуры</th><td>@@LCELSIUM@@</td>
+<th>Последнее значение температуры</th><td>@@LCELSIUM@@ &deg;C</td>
+<th>Последнее значение влажности</th><td>@@LHUMIDITY@@%</td>
 </tr>
 </table>
 <b><u>Доступые опции</u></b><br><br>
