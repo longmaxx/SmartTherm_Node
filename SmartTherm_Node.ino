@@ -17,9 +17,9 @@ ESP8266WiFiMulti WiFiMulti;
 #include "Page_SetDate.h"
 
 /*
-4  - RTC
-5  - RTC 
-12 - 1-Wire
+4 (D2)  - RTC
+5 (D1)  - RTC 
+12(D6) - 1-Wire
 */
 #define PIN_1WIRE 12
 
@@ -55,17 +55,16 @@ void loop() {
   server.handleClient();
   if (flag_HttpSensorJob){
     flag_HttpSensorJob = false;
-    Serial.print ( "IP address: " );
-  Serial.println ( WiFi.localIP() );
+    //Serial.print ( "IP address: " );
+    //Serial.println ( WiFi.localIP() );
     HttpSensorJob();
-    analogWrite(15,200);
-    delay(1000);
-    analogWrite(15,800);
+    //analogWrite(15,200);
+    //delay(1000);
+    //analogWrite(15,800);
   }
-  
-    
   if (getNeedGoSleep()){
-    ESP.deepSleep(5*60*1000*1000,RF_DEFAULT);
+    Serial.println("Going sleep");
+    ESP.deepSleep(5*60*1000*1000,RF_DEFAULT);// 16 (D0) connect to RST
   }
 }
 
