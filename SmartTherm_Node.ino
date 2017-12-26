@@ -1,3 +1,5 @@
+#include <NTPClient.h>
+
 #include <DS1307.h>
 #include <DallasTemperature.h>
 #include <SimpleDHT.h>
@@ -8,6 +10,8 @@
 #include <ESP8266WebServer.h>
 //#include <ESP8266mDNS.h>
 #include <ESP8266WiFiMulti.h>
+
+#include <WiFiUdp.h>
 
 SimpleDHT22 Dht;
 ESP8266WiFiMulti WiFiMulti;
@@ -38,6 +42,10 @@ uint8_t DS18B20Addr;// address of DS19b20 1-wire thermometer
 SensorData lastSensorData;
 boolean flag_HttpSensorJob = true;// timer flag for refresh Sensor data and send; flag for use by Ticker
 
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP,3*3600);
+bool flag_TimeIsOK = false;
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -48,10 +56,12 @@ void setup() {
   initWebServer();
   //ticker
   ticker.attach(60,setHttpSensorJobFlag);
-  
+  timeClient.setUpdateInterval(60000*60);
+  flag_TimeIsOK = timeClient.forceUpdate();
 }
 
 void loop() {
+  flag_TimeIsOK = timeClient.update();
   server.handleClient();
   if (flag_HttpSensorJob){
     flag_HttpSensorJob = false;
@@ -114,9 +124,11 @@ void getSensorData()
   byte h;
   int statusDHT = Dht.read(PIN_1WIRE,&t,&h,NULL);
   //timestamp
-  lastSensorData.Timestamp = RTC1.getTime();
-  if (lastSensorData.Timestamp.mon == 0){
+  if ( !flag_TimeIsOK ){
     lastSensorData.stateTimestamp = STATE_ERROR;
+  }else{
+    lastSensorData.stateTimestamp = STATE_OK;
+    lastSensorData.Timestamp = timeClient.getEpochTime();
   }
   //Data
   if (statusDHT == SimpleDHTErrSuccess){
@@ -134,13 +146,13 @@ void getSensorData()
   }
 }
 
-void HttpSensorJob(){
+void HttpSensorJob()
+{
   getSensorData();
   Serial.print(F("Time: "));
   if (lastSensorData.stateTimestamp == STATE_OK){
-    Serial.print(convertTimeToUrlStr(lastSensorData.Timestamp));
-  }else
-  {
+    Serial.print(getFormattedTime(lastSensorData.Timestamp));
+  }else{
     Serial.print("!!!RTC error");
   }
   Serial.print(" => ");
@@ -150,7 +162,7 @@ void HttpSensorJob(){
   }else{
     Serial.print("!!!T_READ ERROR");
   }
-  Serial.println(" | ");
+  Serial.print(" | ");
   if (lastSensorData.stateHumidity == STATE_OK){
     Serial.print(lastSensorData.Humidity);
     Serial.print("%");
@@ -161,8 +173,7 @@ void HttpSensorJob(){
   if ((lastSensorData.stateCelsium == STATE_OK)&&(lastSensorData.stateTimestamp == STATE_OK))
   {
     sendHttpRequest();
-  }else
-  {
+  }else{
     Serial.println(F("Cancel post results to server due to errors"));
   }
 }
@@ -174,7 +185,7 @@ void sendHttpRequest()
   if (WiFi.status() == WL_CONNECTED){
     String Params = "&device_name=" + DeviceName +
                   "&celsium=" + lastSensorData.Celsium +
-                  "&measured_at=" + convertTimeToUrlStr(lastSensorData.Timestamp);
+                  "&measured_at=" + lastSensorData.Timestamp;
     String SendUrl = "http://" + HostIP + Url + Params; 
     Serial.println("Try send data");
        
@@ -199,15 +210,39 @@ void requestTemperature()
   DT.requestTemperatures();
 }
 
-String convertTimeToUrlStr(Time t)
+String getNowTimeStr()
 {
-  return  (String)t.year + 
-          firstZero(t.mon) +
-          firstZero(t.date) +
-          firstZero(t.hour) +
-          firstZero(t.min) +
-          firstZero(t.sec);
+  if ( flag_TimeIsOK )
+  {
+    return "<time error>";
+  }
+  else
+  {
+    return timeClient.getFormattedTime();
+  }
 }
+
+String getFormattedTime(unsigned long rawTime) {
+  unsigned long hours = (rawTime % 86400L) / 3600;
+  String hoursStr = hours < 10 ? "0" + String(hours) : String(hours);
+
+  unsigned long minutes = (rawTime % 3600) / 60;
+  String minuteStr = minutes < 10 ? "0" + String(minutes) : String(minutes);
+
+  unsigned long seconds = rawTime % 60;
+  String secondStr = seconds < 10 ? "0" + String(seconds) : String(seconds);
+
+  return hoursStr + ":" + minuteStr + ":" + secondStr;
+}
+//String convertTimeToUrlStr(Time t)
+//{
+//  return  (String)t.year + 
+//          firstZero(t.mon) +
+//          firstZero(t.date) +
+//          firstZero(t.hour) +
+//          firstZero(t.min) +
+//          firstZero(t.sec);
+//}
 
 String firstZero(int val)
 {
@@ -234,8 +269,8 @@ void handleRoot()
 {
   String data = ROOT_page;
   data.replace("@@DEVNAME@@", DeviceName);
-  data.replace("@@CURDATE@@", convertTimeToUrlStr(RTC1.getTime()));
-  data.replace("@@LDATE@@", convertTimeToUrlStr(lastSensorData.Timestamp));
+  data.replace("@@CURDATE@@", getNowTimeStr());
+  data.replace("@@LDATE@@", getFormattedTime(lastSensorData.Timestamp));
   data.replace("@@LCELSIUM@@", (String)lastSensorData.Celsium);
   data.replace("@@LHUMIDITY@@", (String)lastSensorData.Humidity);
   server.send ( 200, "text/html; charset=utf-8", data );

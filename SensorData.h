@@ -12,7 +12,7 @@ struct SensorData {
     byte stateTimestamp = STATE_OK;
     byte stateCelsium = STATE_OK;
     byte stateHumidity = STATE_ERROR;
-    Time Timestamp;
+    unsigned long Timestamp;
     float Celsium;// celsium
     int Humidity;
 };
