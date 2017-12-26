@@ -112,15 +112,19 @@ void getSensorData()
   //try DHT22
   byte t;
   byte h;
-  int res = Dht.read(PIN_1WIRE,&t,&h,NULL);
-  Serial.println(res);
-  if (res == SimpleDHTErrSuccess){
+  int statusDHT = Dht.read(PIN_1WIRE,&t,&h,NULL);
+  //timestamp
+  lastSensorData.Timestamp = RTC1.getTime();
+  if (lastSensorData.Timestamp.mon == 0){
+    lastSensorData.stateTimestamp = STATE_ERROR;
+  }
+  //Data
+  if (statusDHT == SimpleDHTErrSuccess){
     lastSensorData.stateHumidity = STATE_OK;
     lastSensorData.stateCelsium = STATE_OK;
     lastSensorData.Celsium = t;
     lastSensorData.Humidity = h;
   }else{
-
     // try DS18b20
     requestTemperature();
     lastSensorData.Celsium = DT.getTempCByIndex(0); 
@@ -132,16 +136,9 @@ void getSensorData()
 
 void HttpSensorJob(){
   getSensorData();
-  if (lastSensorData.Celsium == DEVICE_DISCONNECTED_C){
-    lastSensorData.stateCelsium = STATE_ERROR;
-  }
-  lastSensorData.Timestamp = RTC1.getTime();
-  if (lastSensorData.Timestamp.mon == 0){
-    lastSensorData.stateTimestamp = STATE_ERROR;
-  }
   Serial.print(F("Time: "));
   if (lastSensorData.stateTimestamp == STATE_OK){
-    Serial.print(getDateTimeUrl(lastSensorData.Timestamp));
+    Serial.print(convertTimeToUrlStr(lastSensorData.Timestamp));
   }else
   {
     Serial.print("!!!RTC error");
@@ -149,10 +146,18 @@ void HttpSensorJob(){
   Serial.print(" => ");
   if (lastSensorData.stateCelsium == STATE_OK){
     Serial.print(lastSensorData.Celsium);
-    Serial.println("C");
+    Serial.print("C");
   }else{
-    Serial.println("!!!T_READ ERROR");
+    Serial.print("!!!T_READ ERROR");
   }
+  Serial.println(" | ");
+  if (lastSensorData.stateHumidity == STATE_OK){
+    Serial.print(lastSensorData.Humidity);
+    Serial.print("%");
+  }else{
+    Serial.print("!!!H_READ ERROR");
+  }
+  Serial.println("");
   if ((lastSensorData.stateCelsium == STATE_OK)&&(lastSensorData.stateTimestamp == STATE_OK))
   {
     sendHttpRequest();
@@ -169,7 +174,7 @@ void sendHttpRequest()
   if (WiFi.status() == WL_CONNECTED){
     String Params = "&device_name=" + DeviceName +
                   "&celsium=" + lastSensorData.Celsium +
-                  "&measured_at=" + getDateTimeUrl(lastSensorData.Timestamp);
+                  "&measured_at=" + convertTimeToUrlStr(lastSensorData.Timestamp);
     String SendUrl = "http://" + HostIP + Url + Params; 
     Serial.println("Try send data");
        
@@ -194,7 +199,7 @@ void requestTemperature()
   DT.requestTemperatures();
 }
 
-String getDateTimeUrl(Time t)
+String convertTimeToUrlStr(Time t)
 {
   return  (String)t.year + 
           firstZero(t.mon) +
@@ -229,8 +234,8 @@ void handleRoot()
 {
   String data = ROOT_page;
   data.replace("@@DEVNAME@@", DeviceName);
-  data.replace("@@CURDATE@@", getDateTimeUrl(RTC1.getTime()));
-  data.replace("@@LDATE@@", getDateTimeUrl(lastSensorData.Timestamp));
+  data.replace("@@CURDATE@@", convertTimeToUrlStr(RTC1.getTime()));
+  data.replace("@@LDATE@@", convertTimeToUrlStr(lastSensorData.Timestamp));
   data.replace("@@LCELSIUM@@", (String)lastSensorData.Celsium);
   data.replace("@@LHUMIDITY@@", (String)lastSensorData.Humidity);
   server.send ( 200, "text/html; charset=utf-8", data );
