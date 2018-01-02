@@ -65,12 +65,7 @@ void loop() {
   server.handleClient();
   if (flag_HttpSensorJob){
     flag_HttpSensorJob = false;
-    //Serial.print ( "IP address: " );
-    //Serial.println ( WiFi.localIP() );
     HttpSensorJob();
-    //analogWrite(15,200);
-    //delay(1000);
-    //analogWrite(15,800);
   }
   if (getNeedGoSleep()){
     Serial.println("Going sleep");
@@ -88,8 +83,6 @@ void initDS18B20()
 void initWifi()
 {
   //wifi setup
-  //WiFi.mode(WIFI_STA);
-//  WiFi.begin("KotNet", "MyKotNet123");
   WiFiMulti.addAP("KotNet", "MyKotNet123");
   waitWiFiConnected();
   Serial.print ( "IP address: " );
