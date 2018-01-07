@@ -1,0 +1,38 @@
+﻿<HTML>
+<TITLE>
+Smart control
+</TITLE>
+<HEAD>
+</HEAD>
+<SCRIPT src="./jquery-3.2.1.js"></SCRIPT>
+<SCRIPT>
+
+$(document).ready(function(){
+	$.getJSON("/last",{}).done(function (data){
+		$("#devName2").text(data['devname']);
+		$("#celsium_last").text(data['celsium']);
+		$("#humidity_last").text(data['humidity']);
+		$("#date_last").text(data['date_last']);
+		$("#date_now").text(data['date_now']);
+		console.log(JSON.stringify(data));
+	});
+});	
+	
+	
+
+</SCRIPT>
+<BODY>
+<h2>Device name: <span id="devName2"/></h2>
+Текущая дата: <span id="date_now"></span>
+<table style="width:50%;border:double;margin:20px;">
+<tr>
+<th>Последняя дата</th><td><span id="date_last"/></td>
+</tr>
+<tr>
+<th>Последнее значение температуры</th><td><span id="celsium_last"/> &deg;C</td>
+<th>Последнее значение влажности</th><td><span id="humidity_last"/>%</td>
+</tr>
+</table>
+<b><u>Доступые опции</u></b><br><br>
+</BODY>
+</HTML>
