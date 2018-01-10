@@ -97,6 +97,10 @@ void loop() {
   }
 }
 
+boolean getNeedGoSleep()
+{
+  return false;
+}
 void initDS18B20()
 {
   // init onewire DS18b20
@@ -122,10 +126,7 @@ void waitWiFiConnected()
     i--;
   }
 }
-boolean getNeedGoSleep()
-{
-  return false;
-}
+
 
 void setHttpSensorJobFlag()
 {
@@ -229,7 +230,7 @@ void requestTemperature()
 
 String getNowTimeStr()
 {
-  if ( flag_TimeIsOK )
+  if ( !flag_TimeIsOK )
   {
     return "=time error=";
   }
