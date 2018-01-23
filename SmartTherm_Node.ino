@@ -1,6 +1,3 @@
-#include <NTPClient.h>
-
-#include <DS1307.h>
 #include <DallasTemperature.h>
 #include <SimpleDHT.h>
 #include <ESP8266WiFi.h>
@@ -8,9 +5,11 @@
 #include <Ticker.h>
 #include "SensorData.h"
 #include <ESP8266WebServer.h>
-//#include <ESP8266mDNS.h>
 #include <ESP8266WiFiMulti.h>
 #include <WiFiUdp.h>
+#include <NTPClient.h>
+#include "TimeManager.h"
+
 
 #include <FS.h>
 File fsUploadFile;
@@ -21,18 +20,19 @@ ESP8266WiFiMulti WiFiMulti;
 /*
 4 (D2)  - RTC
 5 (D1)  - RTC 
-12(D6) - 1-Wire
+12(D6) - 1-Wire (DS18B20 or DHT22)
+16(D0) connect to RST for SLEEP WAKE UP work
+
 */
 #define PIN_1WIRE 12
+#define DBG_OUTPUT_PORT Serial
 
-String HostIP = "192.168.0.100:80";
+String HostIP = "192.168.1.100:80";
 String Url = "/TMon2/web/index.php?r=temperatures/commit";
 String DeviceName = "nano";
-
 ESP8266WebServer server ( 80 );
 
 Ticker ticker;// task timer
-DS1307 RTC1(5, 4);
 OneWire Wire1Port(PIN_1WIRE);
 DallasTemperature DT(&Wire1Port);
   
@@ -40,24 +40,11 @@ uint8_t DS18B20Addr;// address of DS19b20 1-wire thermometer
 SensorData lastSensorData;
 boolean flag_HttpSensorJob = true;// timer flag for refresh Sensor data and send; flag for use by Ticker
 
+
+DS1307 RTC1(5, 4);
 WiFiUDP ntpUDP;
-NTPClient timeClient(ntpUDP,3*3600);
-bool flag_TimeIsOK = false;
-
-#define DBG_OUTPUT_PORT Serial
-
-//format bytes
-String formatBytes(size_t bytes) {
-  if (bytes < 1024) {
-    return String(bytes) + "B";
-  } else if (bytes < (1024 * 1024)) {
-    return String(bytes / 1024.0) + "KB";
-  } else if (bytes < (1024 * 1024 * 1024)) {
-    return String(bytes / 1024.0 / 1024.0) + "MB";
-  } else {
-    return String(bytes / 1024.0 / 1024.0 / 1024.0) + "GB";
-  }
-} 
+NTPClient timeClient1(ntpUDP,3*3600);
+TimeManager timeMan(RTC1, ntpUDP, timeClient1);
 
 void setup() {
   // put your setup code here, to run once:
@@ -80,12 +67,10 @@ void setup() {
   initWebServer();
   //ticker
   ticker.attach(60,setHttpSensorJobFlag);
-  timeClient.setUpdateInterval(60000*60);
-  flag_TimeIsOK = timeClient.forceUpdate();
 }
 
 void loop() {
-  flag_TimeIsOK = timeClient.update();
+  timeMan.loopNTP();
   server.handleClient();
   if (flag_HttpSensorJob){
     flag_HttpSensorJob = false;
@@ -131,6 +116,7 @@ void waitWiFiConnected()
 void setHttpSensorJobFlag()
 {
   flag_HttpSensorJob = true;
+  //Serial.println(">>Ticker");
 }
 
 void getSensorData()
@@ -138,22 +124,18 @@ void getSensorData()
   lastSensorData.stateHumidity = STATE_ERROR;
   lastSensorData.stateCelsium = STATE_ERROR;
   //try DHT22
-  byte t;
-  byte h;
-  int statusDHT = Dht.read(PIN_1WIRE,&t,&h,NULL);
+  int statusDHT = Dht.read2(PIN_1WIRE,&lastSensorData.Celsium,&lastSensorData.Humidity,NULL);
   //timestamp
-  if ( !flag_TimeIsOK ){
+  if ( !timeMan.flag_TimeIsOK ){
     lastSensorData.stateTimestamp = STATE_ERROR;
   }else{
     lastSensorData.stateTimestamp = STATE_OK;
-    lastSensorData.Timestamp = timeClient.getEpochTime();
+    lastSensorData.Timestamp = timeMan.getTimestamp();
   }
   //Data
   if (statusDHT == SimpleDHTErrSuccess){
     lastSensorData.stateHumidity = STATE_OK;
     lastSensorData.stateCelsium = STATE_OK;
-    lastSensorData.Celsium = t;
-    lastSensorData.Humidity = h;
   }else{
     // try DS18b20
     requestTemperature();
@@ -172,6 +154,7 @@ void HttpSensorJob()
     Serial.print(getFormattedTime(lastSensorData.Timestamp));
   }else{
     Serial.print("!!!RTC error");
+    Serial.print(getFormattedTime(lastSensorData.Timestamp));
   }
   Serial.print(" => ");
   if (lastSensorData.stateCelsium == STATE_OK){
@@ -230,13 +213,13 @@ void requestTemperature()
 
 String getNowTimeStr()
 {
-  if ( !flag_TimeIsOK )
+  if ( !timeMan.flag_TimeIsOK )
   {
     return "=time error=";
   }
   else
   {
-    return timeClient.getFormattedTime();
+    return getFormattedTime(timeMan.getTimestamp());
   }
 }
 
@@ -252,15 +235,6 @@ String getFormattedTime(unsigned long rawTime) {
 
   return hoursStr + ":" + minuteStr + ":" + secondStr;
 }
-//String convertTimeToUrlStr(Time t)
-//{
-//  return  (String)t.year + 
-//          firstZero(t.mon) +
-//          firstZero(t.date) +
-//          firstZero(t.hour) +
-//          firstZero(t.min) +
-//          firstZero(t.sec);
-//}
 
 String firstZero(int val)
 {
@@ -298,8 +272,11 @@ bool handleFileRead(String path) {
     if (SPIFFS.exists(pathWithGz))
       path += ".gz";
     File file = SPIFFS.open(path, "r");
+    Serial.println(">>StreamBegin");
     size_t sent = server.streamFile(file, contentType);
+    Serial.println(">>StreamEnd");
     file.close();
+    Serial.println(">>StreamFileClose");
     return true;
   }
   return false;
@@ -337,6 +314,7 @@ void initWebServer()
 
 void handleAjaxDataGet()
 {
+  Serial.println(">>GET_LAST");
   String data = "{";
 
    data +="\"devname\":\"" + DeviceName + "\"" + ",";
@@ -449,3 +427,16 @@ void handleFileList() {
   output += "]";
   server.send(200, "text/json", output);
 }
+
+//format bytes
+String formatBytes(size_t bytes) {
+  if (bytes < 1024) {
+    return String(bytes) + "B";
+  } else if (bytes < (1024 * 1024)) {
+    return String(bytes / 1024.0) + "KB";
+  } else if (bytes < (1024 * 1024 * 1024)) {
+    return String(bytes / 1024.0 / 1024.0) + "MB";
+  } else {
+    return String(bytes / 1024.0 / 1024.0 / 1024.0) + "GB";
+  }
+} 
