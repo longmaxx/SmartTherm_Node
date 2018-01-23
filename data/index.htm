@@ -1,0 +1,52 @@
+﻿<HTML>
+<TITLE>
+Smart control
+</TITLE>
+<HEAD>
+</HEAD>
+<BODY>
+<div class="container-fluid">
+	<div class="col-xs-1"></div>
+	<div class="col-xs-11">
+		<div class="row"><h2>Device name: '<span id="devName2">NoName</span>'</h2></div>
+		<div class="row lead">
+		Текущая дата: <span id="date_now"></span>
+		</div>
+		<table class="table table-striped">
+			<tr>
+				<td>Последняя дата</td><td><span id="date_last"/></td>
+			</tr>
+			<tr>
+				<td>Последнее значение температуры</td><td><span id="celsium_last"/> &deg;C</td>
+			</tr>
+			<tr>
+				<td>Последнее значение влажности</td><td><span id="humidity_last"/>%</td>
+			</tr>
+		</table>
+		<div class="row">
+		<button onclick=updateData() type="button" class="btn btn-primary">UPDATE</button>
+		</div>
+	</div>
+</div>
+<SCRIPT src="./jquery-3.2.1.min.js" type="application/x-javascript"></SCRIPT>
+<SCRIPT src="./bootstrap.min.js" type="application/x-javascript"></SCRIPT>
+<link href="./bootstrap.min.css" rel="stylesheet">
+<link href="./bootstrap-theme.min.css" rel="stylesheet">
+<SCRIPT>
+function updateData(){
+	//$.getJSON("/last",{}).done(updateData_callback);
+	updateData_callback({"devname":"nano","celsium":"-127.00","humidity":"0","date_now":"22:25:52","date_last":"22:25:35"});
+}
+function updateData_callback(data){
+	
+	$("#devName2").text(data['devname']);
+	$("#celsium_last").text(data['celsium']);
+	$("#humidity_last").text(data['humidity']);
+	$("#date_last").text(data['date_last']);
+	$("#date_now").text(data['date_now']);
+	console.log(JSON.stringify(data));
+}	
+$(document).ready(updateData());	
+</SCRIPT>
+</BODY>
+</HTML>

@@ -4,7 +4,7 @@
 #ifndef SENSORDATA_H
   #define SENSORDATA_H
 
-#define STATE_OK 1
+#define STATE_OK 0
 #define STATE_ERROR 2
 
 struct SensorData {
@@ -14,7 +14,7 @@ struct SensorData {
     byte stateHumidity = STATE_ERROR;
     unsigned long Timestamp;
     float Celsium;// celsium
-    int Humidity;
+    float Humidity;
 };
 
 #endif 
