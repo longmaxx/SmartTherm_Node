@@ -1,6 +1,6 @@
 #include "TimeManager.h"
 
-TimeManager::TimeManager(DS1307 &p_DS1307,WiFiUDP &p_ntpUDP, NTPClient &p_timeClient):ntpUDP(p_ntpUDP), rtc(p_DS1307), timeClient(p_timeClient)
+TimeManager::TimeManager(DS1307 &p_DS1307, NTPClient &p_timeClient): rtc(p_DS1307), timeClient(p_timeClient)
 {
 
 }

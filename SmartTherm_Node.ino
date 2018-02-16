@@ -27,8 +27,8 @@ ESP8266WiFiMulti WiFiMulti;
 #define PIN_1WIRE 12
 #define DBG_OUTPUT_PORT Serial
 
-String HostIP = "192.168.1.100:80";
-String Url = "/TMon2/web/index.php?r=temperatures/commit";
+String HostIP = "192.168.1.110:80";
+String Url = "/web/index.php?r=temperatures/commit";
 String DeviceName = "nano";
 ESP8266WebServer server ( 80 );
 
@@ -44,7 +44,7 @@ boolean flag_HttpSensorJob = true;// timer flag for refresh Sensor data and send
 DS1307 RTC1(5, 4);
 WiFiUDP ntpUDP;
 NTPClient timeClient1(ntpUDP,3*3600);
-TimeManager timeMan(RTC1, ntpUDP, timeClient1);
+TimeManager timeMan(RTC1, timeClient1);
 
 void setup() {
   // put your setup code here, to run once:
@@ -78,13 +78,13 @@ void loop() {
   }
   if (getNeedGoSleep()){
     Serial.println("Going sleep");
-    ESP.deepSleep(5*60*1000*1000,RF_DEFAULT);// 16 (D0) connect to RST
+    ESP.deepSleep(1*60*1000*1000,RF_DEFAULT);// 16 (D0) connect to RST
   }
 }
 
 boolean getNeedGoSleep()
 {
-  return false;
+  return true;
 }
 void initDS18B20()
 {
@@ -186,6 +186,7 @@ void sendHttpRequest()
   if (WiFi.status() == WL_CONNECTED){
     String Params = "&device_name=" + DeviceName +
                   "&celsium=" + lastSensorData.Celsium +
+                  "&humidity=" + lastSensorData.Humidity +
                   "&measured_at=" + lastSensorData.Timestamp;
     String SendUrl = "http://" + HostIP + Url + Params; 
     Serial.println("Try send data");
