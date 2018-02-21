@@ -10,13 +10,18 @@
 #include <NTPClient.h>
 #include "TimeManager.h"
 
+#include <PubSubClient.h>
+const char *mqtt_server = "m14.cloudmqtt.com"; // Имя сервера MQTT
+const int mqtt_port = 15303; // Порт для подключения к серверу MQTT
+
+
 
 #include <FS.h>
 File fsUploadFile;
 
 SimpleDHT22 Dht;
 ESP8266WiFiMulti WiFiMulti;
-
+WiFiClient wclient;
 /*
 4 (D2)  - RTC
 5 (D1)  - RTC 
@@ -45,6 +50,8 @@ DS1307 RTC1(5, 4);
 WiFiUDP ntpUDP;
 NTPClient timeClient1(ntpUDP,3*3600);
 TimeManager timeMan(RTC1, timeClient1);
+
+PubSubClient mqtt_client(wclient, mqtt_server, mqtt_port);
 
 void setup() {
   // put your setup code here, to run once:
@@ -76,6 +83,9 @@ void loop() {
     flag_HttpSensorJob = false;
     HttpSensorJob();
   }
+  if (mqtt_client.connected()){
+    mqtt_client.loop();
+  }
   if (getNeedGoSleep()){
     Serial.println("Going sleep");
     ESP.deepSleep(1*60*1000*1000,RF_DEFAULT);// 16 (D0) connect to RST
@@ -84,7 +94,7 @@ void loop() {
 
 boolean getNeedGoSleep()
 {
-  return true;
+  return false;
 }
 void initDS18B20()
 {
@@ -173,10 +183,41 @@ void HttpSensorJob()
   Serial.println("");
   if ((lastSensorData.stateCelsium == STATE_OK)&&(lastSensorData.stateTimestamp == STATE_OK))
   {
-    sendHttpRequest();
+    sendMQTT();
+    //sendHttpRequest();
   }else{
     Serial.println(F("Cancel post results to server due to errors"));
   }
+}
+
+void sendMQTT()
+{
+  waitWiFiConnected();
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!mqtt_client.connected()) {
+      Serial.println("Connecting to MQTT server");
+      if (mqtt_client.connect(MQTT::Connect("arduino_" + DeviceName).set_auth(mqtt_user, mqtt_pass))) {
+        Serial.println("Connected to MQTT server");
+        //mqtt_client.set_callback(callback);
+        //mqtt_client.subscribe("test/led"); // подписывааемся по топик с данными для светодиода
+      } else {
+        Serial.println("Could not connect to MQTT server"); 
+      }
+    }
+    if (mqtt_client.connected()){
+      //mqtt_client.loop();
+      String Params = "{\"device_name\":\"" + DeviceName + "\","+
+                  "\"celsium\":\"" + lastSensorData.Celsium + "\","+
+                  "\"humidity\":\"" + lastSensorData.Humidity + "\","+
+                  "\"measured_at\":\"" + lastSensorData.Timestamp + "\""+
+                  "}";
+      
+      mqtt_client.publish("test/temp",Params);
+      mqtt_client.disconnect();
+    }
+  
+  }
+
 }
 
 void sendHttpRequest()
