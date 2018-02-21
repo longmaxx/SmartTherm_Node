@@ -13,6 +13,8 @@
 #include <PubSubClient.h>
 const char *mqtt_server = "m14.cloudmqtt.com"; // Имя сервера MQTT
 const int mqtt_port = 15303; // Порт для подключения к серверу MQTT
+const char *mqtt_user = "aNano1"; // Логи от сервер
+const char *mqtt_pass = "Hui123"; // Пароль от сервера
 
 
 
