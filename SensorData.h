@@ -1,5 +1,5 @@
 #ifndef DS1307_H
-  #include <DS1307.h>
+  //#include <DS1307.h>
 #endif  
 #ifndef SENSORDATA_H
   #define SENSORDATA_H
@@ -10,10 +10,12 @@
 struct SensorData {
   public:
     byte stateTimestamp = STATE_OK;
-    byte stateCelsium = STATE_OK;
-    byte stateHumidity = STATE_ERROR;
     unsigned long Timestamp;
+    
+    byte stateCelsium = STATE_OK;
     float Celsium;// celsium
+    
+    byte stateHumidity = STATE_ERROR;
     float Humidity;
 };
 
