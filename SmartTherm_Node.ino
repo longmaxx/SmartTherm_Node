@@ -9,7 +9,7 @@
 #include <PubSubClient.h>
 #include <Ticker.h>
 
-
+bool flagSleep = true;
 Ticker ticker;// task timer
 
 String HostIP = "192.168.1.110:80";
@@ -68,8 +68,8 @@ void setup() {
   DBG_PORT.println("Setup...");
     
   initWifi();
-  ticker.attach(60,setHttpSensorJobFlag);
   initDS18B20();
+  ticker.attach(60,setHttpSensorJobFlag);
 }
 
 void loop() { 
@@ -79,8 +79,13 @@ void loop() {
     Job_DHT();
     Job_DS18B20();
   }
-  if (mqtt_client.connected()){
+/*  if (mqtt_client.connected()){
     mqtt_client.loop();// execute  subscribed actions
+  }
+*/  
+  if (flagSleep){
+    Serial.println("Going sleep");
+    ESP.deepSleep(1*60*1000*1000,RF_DEFAULT);// 16 (D0) connect to RST
   }
 }
 
@@ -274,20 +279,11 @@ void sendMQTT(String topicName, String value)
     }
     if (mqtt_client.connected()){
       //mqtt_client.loop();
-//      String Params = "{\"device_name\":\"" + DeviceName + "\","+
-//                  "\"celsium\":\"" + lastSensorData.Celsium + "\","+
-//                  "\"humidity\":\"" + lastSensorData.Humidity + "\","+
-//                  "\"measured_at\":\"" + lastSensorData.Timestamp + "\""+
-//                  "}";
-      
       mqtt_client.publish(topicName,value);
       mqtt_client.disconnect();
     }
-  
   }
-
 }
-
 String getFormattedTime(unsigned long rawTime) {
   unsigned long hours = (rawTime % 86400L) / 3600;
   String hoursStr = hours < 10 ? "0" + String(hours) : String(hours);
@@ -309,3 +305,4 @@ String firstZero(int val)
     return (String)val;
   }
 }
+
