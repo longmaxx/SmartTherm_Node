@@ -1,0 +1,100 @@
+<html>
+	 <meta charset="UTF-8"> 
+	 <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	<link href="./bootstrap.min.css" rel="stylesheet">
+	<link href="dashboard.css" rel="stylesheet">
+<body>
+    <nav class="navbar navbar-dark fixed-top bg-dark flex-md-nowrap p-0 shadow">
+      <a class="navbar-brand col-sm-3 col-md-2 mr-0" href="./">Categories</a>
+      <ul class="navbar-nav px-3">
+        <li class="nav-item text-nowrap">
+          <a class="nav-link" href="#">Sign out</a>
+        </li>
+      </ul>
+    </nav>
+
+    <div class="container-fluid">
+      <div class="row">
+        <nav class="col-md-2 d-none d-md-block bg-light sidebar">
+          <div class="sidebar-sticky">
+            <ul class="nav flex-column"  role="tablist">
+              <li class="nav-item">
+                <a class="nav-link" id="wifi-tab" data-toggle="tab" href="#wifisettings" aria-controls="wifisettings" aria-selected="true">
+                  <span data-feather="wifi"></span> Wifi settings
+                </a>
+              </li>
+			  <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#mqttsettings" aria-controls="mqttsettings" aria-selected="false">
+                  <span data-feather="server"></span> MQTT settings
+                </a>
+              </li>
+			  <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#seedata" aria-controls="seedata" aria-selected="false">
+                  <span data-feather="zap"></span> See Data
+                </a>
+              </li>
+            </ul>
+          </div>
+        </nav>
+
+        <main role="main" class="col-md-9 ml-sm-auto col-lg-10 px-4">
+          <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+            <div class="tab-content">
+				<div class="tab-pane fade show active" id="wifisettings" role="tabpanel" aria-labelledby="wifi-tab">
+					<form id="form_wifi_settings" class="needs-validation" novalidate>
+						<div id="group-ssid" class="form-group">
+							<label for="wifi_ssid">SSID</label>
+							<select type="text" name="ssid" class="form-control" id="wifi_ssid" aria-describedby="ssidHelp" placeholder="Enter ssid" required>
+								<option value="">Select WiFi</option>
+							</select>
+							<small id="ssidHelp" class="form-text invalid-feedback">Select WiFi ssid to connect.</small>
+						</div>
+						<div id="group-password"class="form-group">
+							<label for="wifi_password">Password</label>
+							<input type="password" name="password" class="form-control" id="wifi_password" placeholder="" required>
+						</div>
+						<button type="submit" class="btn btn-primary">Save</button>
+					</form>
+				</div>
+				<div class="tab-pane fade" id="mqttsettings" role="tabpanel" aria-labelledby="mqtt-tab">
+					<form id="form_mqtt_settings">
+						<div id="group-server" class="form-group">
+							<label for="mqtt_url">Server</label>
+							<input type="text" name="server" class="form-control" id="mqtt_url" aria-describedby="mqttUrlHelp" placeholder="Enter url here">
+							<small id="mqttUrlHelp" class="form-text text-muted">Enter mqtt url including port to connect.</small>
+						</div>
+						<div id="group-login" class="form-group">
+							<label for="mqtt_login">Login</label>
+							<input type="password" name="login" class="form-control" id="mqtt_login" aria-describedby="mqttLoginHelp" placeholder="">
+							<small id="mqttLoginHelp" class="form-text text-muted">Leave field empty to anonymous connection.</small>
+						</div>
+						<div id="group-password" class="form-group">
+							<label for="mqtt_password">Password</label>
+							<input type="password" name="password" class="form-control" id="mqtt_password" placeholder="" value=""> <input type="checkbox" id="mqtt_showpassword">Show Password </input>
+
+						</div>
+						<button type="submit" class="btn btn-primary">Save</button>
+					</form>
+				</div>
+				<div class="tab-pane fade" id="seedata"      role="tabpanel" aria-labelledby="seedata-tab">
+					DATA
+				</div>
+			</div>
+          </div>
+        </main>
+      </div>
+    </div>
+</body>
+	
+	<script src="https://code.jquery.com/jquery-3.3.1.min.js" crossorigin="anonymous"></script>
+    <script>window.jQuery || document.write('<script src="./jquery-3.2.1.min.js"><\/script>')</script>
+	<script src="./popper.min.js"></script>
+	<script src="./bootstrap.min.js"></script>
+	<script src="./esp_api.js"></script>
+	    <!-- Icons -->
+    <script src="https://unpkg.com/feather-icons/dist/feather.min.js"></script>
+    <script>
+      feather.replace()
+    </script>
+</html>
+
