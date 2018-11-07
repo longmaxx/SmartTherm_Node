@@ -18,6 +18,7 @@ String HostIP = "192.168.1.110:80";
 String Url = "/web/index.php?r=temperatures/commit";
 String DeviceName = "nano";
 
+
 String wifiName = "KotNet";
 String wifiPwd  = "MyKotNet123";
 
@@ -31,11 +32,12 @@ bool flag_EnableAP = false;
 
 
 #define MQTT_SERVER_LEN_MAX (50)
+#define MQTT_PORT_LEN_MAX (6)
 #define MQTT_USER_LEN_MAX (20)
 #define MQTT_PASSWORD_LEN_MAX (30)
 
 char mqtt_server[MQTT_SERVER_LEN_MAX];// = "192.168.1.52";//"m14.cloudmqtt.com"; // Имя сервера MQTT
-int mqtt_port = 1883;//15303; // Порт для подключения к серверу MQTT
+char mqtt_port[MQTT_PORT_LEN_MAX];// = 1883;//15303; // Порт для подключения к серверу MQTT
 char mqtt_user[MQTT_USER_LEN_MAX];// = "";//"aNano1"; // Логи от сервер
 char mqtt_password[MQTT_PASSWORD_LEN_MAX];// = "";//"Hui123"; // Пароль от сервера
 
@@ -101,7 +103,7 @@ void setup() {
   readWifiSettingsFromFlash();
   readMqttSettingsFromFlash();
   String srv(mqtt_server);
-  mqtt_client.set_server(srv,mqtt_port);
+  mqtt_client.set_server(srv,String(mqtt_port).toInt());
   initWifi();
   initDS18B20();
   ticker.attach(60,setHttpSensorJobFlag);
