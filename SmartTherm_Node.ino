@@ -4,11 +4,10 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPClient.h>
 #include "SensorData.h"
-//#include <ESP8266WiFiMulti.h>
-#include <WiFiUdp.h>
-//#include <NTPClient.h>
+//#include <WiFiUdp.h>
 #include <PubSubClient.h>
 #include <Ticker.h>
+#include "Options.h"
 #include <FS.h>
 
 bool flagSleep = false;
@@ -19,27 +18,13 @@ String Url = "/web/index.php?r=temperatures/commit";
 String DeviceName = "nano";
 
 
-String wifiName = "KotNet";
-String wifiPwd  = "MyKotNet123";
+//String wifiName = "KotNet";
+//String wifiPwd  = "MyKotNet123";
 
-#define WIFI_SSID_LEN_MAX (20)
-#define WIFI_PASSWORD_LEN_MAX (30)
-char ssidWiFi[WIFI_SSID_LEN_MAX];
-char passwordWiFi[WIFI_PASSWORD_LEN_MAX];
+
 char* wifiAPName = "AP_nano";//+DeviceName;
 char* wifiAPPwd = "12345678";
 bool flag_EnableAP = false;
-
-
-#define MQTT_SERVER_LEN_MAX (50)
-#define MQTT_PORT_LEN_MAX (6)
-#define MQTT_USER_LEN_MAX (20)
-#define MQTT_PASSWORD_LEN_MAX (30)
-
-char mqtt_server[MQTT_SERVER_LEN_MAX];// = "192.168.1.52";//"m14.cloudmqtt.com"; // Имя сервера MQTT
-char mqtt_port[MQTT_PORT_LEN_MAX];// = 1883;//15303; // Порт для подключения к серверу MQTT
-char mqtt_user[MQTT_USER_LEN_MAX];// = "";//"aNano1"; // Логи от сервер
-char mqtt_password[MQTT_PASSWORD_LEN_MAX];// = "";//"Hui123"; // Пароль от сервера
 
 String sCelsiumTopic = DeviceName + "/Celsium";
 String sHumidityTopic = DeviceName + "/Humidity";
@@ -51,19 +36,11 @@ WiFiClient wclient;
 ESP8266WebServer server(80);
 File fsUploadFile;
 
-const String opt_wifi_file = "/opts/wifi.p";
-#define opt_wifi_ssid_i (0)
-#define opt_wifi_password_i (1)
-const String opt_mqtt_file = "/opts/mqtt.p";
-#define opt_mqtt_server_i (0)
-#define opt_mqtt_port_i (1)
-#define opt_mqtt_user_i (2)
-#define opt_mqtt_password_i (3)
 /*
 12(D6) - 1-Wire ( DHT22)
 14() - 1-wire DS18b20 
 16(D0) connect to RST for SLEEP WAKE UP work
-
+13 - Btn Config. Pull-Up to enable web interface
 */
 #define PIN_DHT (12)
 #define PIN_1WIRE (14)
@@ -84,10 +61,6 @@ boolean flag_HttpSensorJob = true;// timer flag for refresh Sensor data and send
 
 
 //DS1307 RTC1(5, 4);
-//WiFiUDP ntpUDP;
-//NTPClient timeClient1(ntpUDP,3*3600);
-//TimeManager timeMan(RTC1, timeClient1);
-
 //PubSubClient mqtt_client(wclient, mqtt_server, mqtt_port);
 //PubSubClient mqtt_client((uint8_t*)mqtt_server,(uint16_t) mqtt_port, (Client)wclient);
 PubSubClient mqtt_client(wclient);
@@ -98,31 +71,24 @@ void setup() {
   DBG_PORT.begin(115200);
   DBG_PORT.println("");
   DBG_PORT.println("Setup...");
-  checkBtnConfigState(); 
   SPIFFS.begin();
-  readWifiSettingsFromFlash();
-  readMqttSettingsFromFlash();
-  String srv(mqtt_server);
-  mqtt_client.set_server(srv,String(mqtt_port).toInt());
+  checkBtnConfigState(); 
+  initMQTT();
   initWifi();
   initDS18B20();
   ticker.attach(60,setHttpSensorJobFlag);
-  
-//  WiFi.softAP(wifiAPName,wifiAPPwd);
 }
 
 void loop() { 
-  //timeMan.loopNTP();
   server.handleClient();
   if (flag_HttpSensorJob){
     flag_HttpSensorJob = false;
     Job_DHT();
     Job_DS18B20();
   }
-/*  if (mqtt_client.connected()){
+  if (mqtt_client.connected()){
     mqtt_client.loop();// execute  subscribed actions
   }
-*/  
   if (flagSleep){
     Serial.println("Going sleep");
     ESP.deepSleep(1*60*1000*1000,RF_DEFAULT);// 16 (D0) connect to RST
@@ -216,17 +182,24 @@ void initDS18B20()
   findAllDS18B20(pAddr_DS18B20, &ds18b20_count);
 }
 
+void initMQTT()
+{
+  readMqttSettingsFromFlash();
+  String srv(mqtt_server);
+  mqtt_client.set_server(srv,String(mqtt_port).toInt());
+}
 
 void initWifi()
 {
+    readWifiSettingsFromFlash();
   //wifi setup
   //if (flag_EnableAP){
     flag_EnableAP = false;
-    WiFi.softAP(wifiAPName,wifiAPPwd);
+    //WiFi.softAP(wifiAPName,wifiAPPwd);
     initWebServer();
   //}else{
     //WiFi.persistent(false);
-    WiFi.begin("KotNet", "MyKotNet123");
+    WiFi.begin(ssidWiFi, passwordWiFi);
     waitWiFiConnected();
     DBG_PORT.print ( "IP address: " );
     DBG_PORT.println ( WiFi.localIP() );
@@ -262,13 +235,7 @@ void Job_DHT()
 void getSensorData_DHT()
 {
   resetSensorData();
-  //try DHT22
   int statusDHT = Dht.read2(PIN_DHT,&lastSensorData.Celsium,&lastSensorData.Humidity,NULL);
-//  //timestamp
-//  if (timeMan.flag_TimeIsOK ){
-//   lastSensorData.stateTimestamp = STATE_OK;
-//   lastSensorData.Timestamp = timeMan.getTimestamp();
-//  }
   //Data
   if (statusDHT == SimpleDHTErrSuccess){
     lastSensorData.stateHumidity = STATE_OK;
@@ -435,7 +402,7 @@ int readFileLine(String fileName, int iLine, char* buf, int len)
     lenRead = file.readBytesUntil('\r', buf, len);
   else {
     buf[0] = '\0';
-    DBG_PORT.print("no line");
+    //DBG_PORT.print("no line");
   }
   file.close();
   DBG_PORT.write("Read ");
@@ -455,13 +422,13 @@ bool fileGotoLine(File file, int iLine)
   if (iLine == 0) return true;
   for (int i = 0; i < iLine; i++)
   {
-    DBG_PORT.write("GOTOLine=");
-    DBG_PORT.print(i, DEC);
+    //DBG_PORT.write("GOTOLine=");
+    //DBG_PORT.print(i, DEC);
     int l = file.readBytesUntil('\n',buf,len);
-    DBG_PORT.write((uint8_t*)buf,l);
-    DBG_PORT.println("");
+    //DBG_PORT.write((uint8_t*)buf,l);
+    //DBG_PORT.println("");
     if (file.position() == file.size()) {
-      DBG_PORT.println("Fail. End of file!");
+      //DBG_PORT.println("Fail. End of file!");
       return false;
     }
   }
@@ -570,6 +537,7 @@ void handleSetWiFi()
       server.arg("ssid").toCharArray(ssidWiFi,20);
       server.arg("password").toCharArray(passwordWiFi,30);
       handleGetWiFi();
+      initWifi();
     }  
   }else if (server.args() >0){
     server.send(400,"text/json","{'success': 'false','error':'Bad request. Need query args: name, pwd.'}");
@@ -589,7 +557,12 @@ void handleGetMQTT()
 
 void handleSetMQTT()
 {
-  
+  server.send(501,"text/json","Not Implemented") ;  
+}
+
+void handleGetWebRoot()
+{
+  handleFileRead("/index.html");
 }
 void initWebServer()
 {
@@ -619,7 +592,7 @@ void initWebServer()
   server.on("/edit", HTTP_POST, [](){ server.send(200, "text/plain", ""); }, handleFileUpload);
 
 
-//  server.on("/",HTTP_GET,onWebRoot);
+  server.on("/",HTTP_GET,handleGetWebRoot);
     //server.on("/list", HTTP_GET, handleFileList);
   server.on ("/wifi",HTTP_POST,handleSetWiFi);
   server.on ("/wifi",HTTP_GET,handleGetWiFi);
@@ -631,15 +604,5 @@ void initWebServer()
   });
   server.begin();
 }
-
-
-
-
-
-//=============================FileSystem===============================
-
-
-
-
 
 
