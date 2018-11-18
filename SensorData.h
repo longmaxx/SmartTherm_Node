@@ -7,16 +7,27 @@
 #define STATE_OK 0
 #define STATE_ERROR 2
 
-struct SensorData {
+#define MAX_DS18B20_COUNT (10)
+
+typedef struct {
+  DeviceAddress address;
+  int celsium;
+} ds18b20_Result;
+
+typedef struct {
   public:
     byte stateTimestamp = STATE_OK;
     unsigned long Timestamp;
     
-    byte stateCelsium = STATE_OK;
-    float Celsium;// celsium
+    byte stateDHT = STATE_OK;
+    float DHTCelsium;// celsium
+    float DHTHumidity;
     
-    byte stateHumidity = STATE_ERROR;
-    float Humidity;
-};
+    ds18b20_Result thermometers[MAX_DS18B20_COUNT]; 
+    unsigned char ds18b20_count = 0;
+    
+} SensorData;
+
+
 
 #endif 

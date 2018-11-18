@@ -1,3 +1,5 @@
+#include <ArduinoJson.h>
+
 #include <DallasTemperature.h>
 #include <SimpleDHT.h>
 #include <ESP8266WiFi.h>
@@ -51,12 +53,9 @@ File fsUploadFile;
 
 OneWire Wire1Port(PIN_1WIRE);
 DallasTemperature DT(&Wire1Port);
-#define MAX_DS18B20_COUNT (10)
-DeviceAddress pAddr_DS18B20[MAX_DS18B20_COUNT];
-int ds18b20_count = 0;
+SensorData lastSensorData;
   
 DeviceAddress DS18B20Addr;// address of DS19b20 1-wire thermometer  
-SensorData lastSensorData;
 boolean flag_HttpSensorJob = true;// timer flag for refresh Sensor data and send; flag for use by Ticker
 
 
@@ -121,11 +120,12 @@ void readMqttSettingsFromFlash()
 void Job_DS18B20()
 {
   DT.requestTemperatures();
-  for (int i=0;i<ds18b20_count;i++){
-    int c = DT.getTempC(pAddr_DS18B20[i]);
-    String sTopic = sCelsiumTopic + "/DS18B20/" + getStringAddress(pAddr_DS18B20[i],8);
+  for (int i=0;i<lastSensorData.ds18b20_count;i++){
+    int c = DT.getTempC(lastSensorData.thermometers[i].address);
+    lastSensorData.thermometers[i].celsium = c;
+    String sTopic = sCelsiumTopic + "/DS18B20/" + getStringAddress(lastSensorData.thermometers[i].address,8);
     DBG_PORT.println(sTopic);
-    sendMQTT(sTopic,(String)lastSensorData.Celsium);
+    sendMQTT(sTopic,(String)lastSensorData.DHTCelsium);
   }
 }
 
@@ -140,9 +140,9 @@ String getStringAddress(DeviceAddress addr, int len)
   return tmp;
 }
 
-void findAllDS18B20 (DeviceAddress* addresses, int* count)
+void findAllDS18B20 ()
 {
-   *count = 0;
+   lastSensorData.ds18b20_count = 0;
    DBG_PORT.println(F("Begin search DS18B20 devices"));
    int allCount = DT.getDeviceCount();
    DBG_PORT.print(F("All device count = "));
@@ -156,9 +156,9 @@ void findAllDS18B20 (DeviceAddress* addresses, int* count)
         DBG_PORT.printf("Addr%i:",i);
         printAddress(tmpAddr);
         DBG_PORT.println();
-        memcpy((addresses)[i],tmpAddr,sizeof(DeviceAddress));
-        (*count)++;
-        if ((*count) > MAX_DS18B20_COUNT){
+        memcpy(lastSensorData.thermometers[i].address,tmpAddr,sizeof(DeviceAddress));
+        (lastSensorData.ds18b20_count)++;
+        if (lastSensorData.ds18b20_count > MAX_DS18B20_COUNT){
           DBG_PORT.println(F("Max device limit!!! Stop search")); 
           return; 
         }
@@ -179,7 +179,7 @@ void initDS18B20()
   //DT.setOneWire(&Wire1Port);
   DT.begin();
   //DT.getAddress(&DS18B20Addr,0);
-  findAllDS18B20(pAddr_DS18B20, &ds18b20_count);
+  findAllDS18B20();
 }
 
 void initMQTT()
@@ -235,26 +235,24 @@ void Job_DHT()
 void getSensorData_DHT()
 {
   resetSensorData();
-  int statusDHT = Dht.read2(PIN_DHT,&lastSensorData.Celsium,&lastSensorData.Humidity,NULL);
+  int statusDHT = Dht.read2(PIN_DHT,&lastSensorData.DHTCelsium,&lastSensorData.DHTHumidity,NULL);
   //Data
   if (statusDHT == SimpleDHTErrSuccess){
-    lastSensorData.stateHumidity = STATE_OK;
-    lastSensorData.stateCelsium = STATE_OK;
+    lastSensorData.stateDHT = STATE_OK;
   }
 }
 
 void resetSensorData()
 {
-  lastSensorData.stateHumidity = STATE_ERROR;
-  lastSensorData.stateCelsium = STATE_ERROR;
+  lastSensorData.stateDHT = STATE_ERROR;
   lastSensorData.stateTimestamp = STATE_ERROR;
 }
 
 void mqtt_sendDHTCelsium()
 {
-  if ((lastSensorData.stateCelsium == STATE_OK))
+  if ((lastSensorData.stateDHT == STATE_OK))
   {
-    sendMQTT(sCelsiumTopic + "/DHT",(String)lastSensorData.Celsium);
+    sendMQTT(sCelsiumTopic + "/DHT",(String)lastSensorData.DHTCelsium);
   }
   else
   {
@@ -264,9 +262,9 @@ void mqtt_sendDHTCelsium()
 
 void mqtt_sendDHTHumidity()
 {
-  if ((lastSensorData.stateHumidity == STATE_OK))
+  if ((lastSensorData.stateDHT == STATE_OK))
   {
-    sendMQTT(sHumidityTopic + "/DHT",(String)lastSensorData.Humidity);
+    sendMQTT(sHumidityTopic + "/DHT",(String)lastSensorData.DHTHumidity);
   }
   else
   {
@@ -284,15 +282,15 @@ void printSensorData_DHT()
     DBG_PORT.print(getFormattedTime(lastSensorData.Timestamp));
   }
   DBG_PORT.print(" => ");
-  if (lastSensorData.stateCelsium == STATE_OK){
-    DBG_PORT.print(lastSensorData.Celsium);
+  if (lastSensorData.stateDHT == STATE_OK){
+    DBG_PORT.print(lastSensorData.DHTCelsium);
     DBG_PORT.print("C");
   }else{
     DBG_PORT.print("!!!T_READ ERROR");
   }
   DBG_PORT.print(" | ");
-  if (lastSensorData.stateHumidity == STATE_OK){
-    DBG_PORT.print(lastSensorData.Humidity);
+  if (lastSensorData.stateDHT == STATE_OK){
+    DBG_PORT.print(lastSensorData.DHTHumidity);
     DBG_PORT.print("%");
   }else{
     DBG_PORT.print("!!!H_READ ERROR");
@@ -564,6 +562,29 @@ void handleGetWebRoot()
 {
   handleFileRead("/index.html");
 }
+
+void handleGetData()
+{
+  DynamicJsonDocument  docJSON(200);
+  JsonObject root = docJSON.to<JsonObject>();
+  root["name"] = DeviceName;
+  JsonObject dht = root.createNestedObject("DHT");
+  if (lastSensorData.stateDHT == STATE_OK){
+    dht["Celsium"] = lastSensorData.DHTCelsium;
+    dht["Humidity"] = lastSensorData.DHTHumidity;
+  }
+  JsonObject ds = root.createNestedObject("DS18B20");
+  for (int i=0;i<lastSensorData.ds18b20_count;i++)
+  {
+    String dsName = getStringAddress(lastSensorData.thermometers[i].address,8);
+    ds[dsName] = lastSensorData.thermometers[i].celsium;
+  }
+  String result;
+  serializeJsonPretty(root,result);
+  DBG_PORT.println(result);
+  server.send(200,"text/json",result);
+}
+
 void initWebServer()
 {
   //SPIFFS.begin();
@@ -598,6 +619,7 @@ void initWebServer()
   server.on ("/wifi",HTTP_GET,handleGetWiFi);
   server.on ("/mqtt",HTTP_POST,handleSetMQTT);
   server.on ("/mqtt",HTTP_GET,handleGetMQTT);
+  server.on ("/data",HTTP_GET,handleGetData);
   server.onNotFound([](){
     if(!handleFileRead(server.uri()))
       server.send(404, "text/plain", "FileNotFound");
