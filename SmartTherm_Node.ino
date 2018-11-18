@@ -1,229 +1,324 @@
+#include <ArduinoJson.h>
+
 #include <DallasTemperature.h>
 #include <SimpleDHT.h>
 #include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
-#include <Ticker.h>
-#include "SensorData.h"
 #include <ESP8266WebServer.h>
-#include <ESP8266WiFiMulti.h>
-#include <WiFiUdp.h>
-#include <NTPClient.h>
-#include "TimeManager.h"
-
-
+#include <ESP8266HTTPClient.h>
+#include "SensorData.h"
+//#include <WiFiUdp.h>
+#include <PubSubClient.h>
+#include <Ticker.h>
+#include "Options.h"
 #include <FS.h>
-File fsUploadFile;
 
-SimpleDHT22 Dht;
-ESP8266WiFiMulti WiFiMulti;
-
-/*
-4 (D2)  - RTC
-5 (D1)  - RTC 
-12(D6) - 1-Wire (DS18B20 or DHT22)
-16(D0) connect to RST for SLEEP WAKE UP work
-
-*/
-#define PIN_1WIRE 12
-#define DBG_OUTPUT_PORT Serial
+bool flagSleep = false;
+Ticker ticker;// task timer
 
 String HostIP = "192.168.1.110:80";
 String Url = "/web/index.php?r=temperatures/commit";
 String DeviceName = "nano";
-ESP8266WebServer server ( 80 );
 
-Ticker ticker;// task timer
+
+//String wifiName = "KotNet";
+//String wifiPwd  = "MyKotNet123";
+
+
+char* wifiAPName = "AP_nano";//+DeviceName;
+char* wifiAPPwd = "12345678";
+bool flag_EnableAP = false;
+
+String sCelsiumTopic = DeviceName + "/Celsium";
+String sHumidityTopic = DeviceName + "/Humidity";
+
+SimpleDHT22 Dht;
+//ESP8266WiFiMulti WiFiMulti;
+WiFiClient wclient;
+
+ESP8266WebServer server(80);
+File fsUploadFile;
+
+/*
+12(D6) - 1-Wire ( DHT22)
+14() - 1-wire DS18b20 
+16(D0) connect to RST for SLEEP WAKE UP work
+13 - Btn Config. Pull-Up to enable web interface
+*/
+#define PIN_DHT (12)
+#define PIN_1WIRE (14)
+#define PIN_BTN_CONFIG (13)
+#define DBG_PORT Serial
+
+#define PIN_BTN_STATE_ENABLED (1)
+
 OneWire Wire1Port(PIN_1WIRE);
 DallasTemperature DT(&Wire1Port);
-  
-uint8_t DS18B20Addr;// address of DS19b20 1-wire thermometer  
 SensorData lastSensorData;
+  
+DeviceAddress DS18B20Addr;// address of DS19b20 1-wire thermometer  
 boolean flag_HttpSensorJob = true;// timer flag for refresh Sensor data and send; flag for use by Ticker
 
 
-DS1307 RTC1(5, 4);
-WiFiUDP ntpUDP;
-NTPClient timeClient1(ntpUDP,3*3600);
-TimeManager timeMan(RTC1, timeClient1);
+//DS1307 RTC1(5, 4);
+//PubSubClient mqtt_client(wclient, mqtt_server, mqtt_port);
+//PubSubClient mqtt_client((uint8_t*)mqtt_server,(uint16_t) mqtt_port, (Client)wclient);
+PubSubClient mqtt_client(wclient);
 
 void setup() {
+  pinMode(PIN_BTN_CONFIG,INPUT);
   // put your setup code here, to run once:
-  Serial.begin(115200);
-  Serial.println("");
-  Serial.println("Setup...");
+  DBG_PORT.begin(115200);
+  DBG_PORT.println("");
+  DBG_PORT.println("Setup...");
   SPIFFS.begin();
-  {
-    Dir dir = SPIFFS.openDir("/");
-    while (dir.next()) {
-      String fileName = dir.fileName();
-      size_t fileSize = dir.fileSize();
-      DBG_OUTPUT_PORT.printf("FS File: %s, size: %s\n", fileName.c_str(), formatBytes(fileSize).c_str());
-    }
-    DBG_OUTPUT_PORT.printf("\n");
-  }
-  
-  initDS18B20();
+  checkBtnConfigState(); 
+  initMQTT();
   initWifi();
-  initWebServer();
-  //ticker
+  initDS18B20();
   ticker.attach(60,setHttpSensorJobFlag);
 }
 
-void loop() {
-  timeMan.loopNTP();
+void loop() { 
   server.handleClient();
   if (flag_HttpSensorJob){
     flag_HttpSensorJob = false;
-    HttpSensorJob();
+    Job_DHT();
+    Job_DS18B20();
   }
-  if (getNeedGoSleep()){
+  if (mqtt_client.connected()){
+    mqtt_client.loop();// execute  subscribed actions
+  }
+  if (flagSleep){
     Serial.println("Going sleep");
     ESP.deepSleep(1*60*1000*1000,RF_DEFAULT);// 16 (D0) connect to RST
   }
 }
 
-boolean getNeedGoSleep()
+void checkBtnConfigState()
 {
-  return true;
+  if (digitalRead(PIN_BTN_CONFIG) == PIN_BTN_STATE_ENABLED){
+    delay(3000);
+    if (digitalRead(PIN_BTN_CONFIG) == PIN_BTN_STATE_ENABLED){
+      flag_EnableAP = true;
+    }
+  }
 }
+
+void readWifiSettingsFromFlash()
+{
+  readFileLine(opt_wifi_file, opt_wifi_ssid_i, ssidWiFi, WIFI_SSID_LEN_MAX);
+  readFileLine(opt_wifi_file, opt_wifi_password_i, passwordWiFi, WIFI_PASSWORD_LEN_MAX);
+}
+void readMqttSettingsFromFlash()
+{
+  readFileLine(opt_mqtt_file, opt_mqtt_server_i, mqtt_server, MQTT_SERVER_LEN_MAX);
+  readFileLine(opt_mqtt_file, opt_mqtt_port_i, mqtt_port, WIFI_SSID_LEN_MAX);
+  readFileLine(opt_mqtt_file, opt_mqtt_user_i, mqtt_user, MQTT_USER_LEN_MAX);
+  readFileLine(opt_mqtt_file, opt_mqtt_password_i, mqtt_password, MQTT_PASSWORD_LEN_MAX);
+}
+
+void Job_DS18B20()
+{
+  DT.requestTemperatures();
+  for (int i=0;i<lastSensorData.ds18b20_count;i++){
+    int c = DT.getTempC(lastSensorData.thermometers[i].address);
+    lastSensorData.thermometers[i].celsium = c;
+    String sTopic = sCelsiumTopic + "/DS18B20/" + getStringAddress(lastSensorData.thermometers[i].address,8);
+    DBG_PORT.println(sTopic);
+    sendMQTT(sTopic,(String)lastSensorData.DHTCelsium);
+  }
+}
+
+String getStringAddress(DeviceAddress addr, int len)
+{
+  String tmp = "";
+  for (int i = 0;i<len;i++){
+    if (addr[i]<=0x0F) tmp +="0";// leading zero
+    tmp += String(addr[i],HEX);
+  }
+  tmp.toUpperCase();
+  return tmp;
+}
+
+void findAllDS18B20 ()
+{
+   lastSensorData.ds18b20_count = 0;
+   DBG_PORT.println(F("Begin search DS18B20 devices"));
+   int allCount = DT.getDeviceCount();
+   DBG_PORT.print(F("All device count = "));
+   DBG_PORT.println(allCount);
+
+   for (int i = 0 ; i<allCount; i++)
+   {
+     DeviceAddress tmpAddr;
+     DT.getAddress(tmpAddr,i);
+     if (DT.validFamily(tmpAddr)){
+        DBG_PORT.printf("Addr%i:",i);
+        printAddress(tmpAddr);
+        DBG_PORT.println();
+        memcpy(lastSensorData.thermometers[i].address,tmpAddr,sizeof(DeviceAddress));
+        (lastSensorData.ds18b20_count)++;
+        if (lastSensorData.ds18b20_count > MAX_DS18B20_COUNT){
+          DBG_PORT.println(F("Max device limit!!! Stop search")); 
+          return; 
+        }
+     }
+   }
+}
+
+void printAddress(DeviceAddress addr)
+{
+  for (int k=0;k<8;k++){
+    DBG_PORT.printf(" %02X",addr[k] );
+  }
+}
+
 void initDS18B20()
 {
   // init onewire DS18b20
-  DT.setOneWire(&Wire1Port);
+  //DT.setOneWire(&Wire1Port);
   DT.begin();
-  DT.getAddress(&DS18B20Addr,0);
+  //DT.getAddress(&DS18B20Addr,0);
+  findAllDS18B20();
 }
+
+void initMQTT()
+{
+  readMqttSettingsFromFlash();
+  String srv(mqtt_server);
+  mqtt_client.set_server(srv,String(mqtt_port).toInt());
+}
+
 void initWifi()
 {
+    readWifiSettingsFromFlash();
   //wifi setup
-  WiFiMulti.addAP("KotNet", "MyKotNet123");
-  waitWiFiConnected();
-  Serial.print ( "IP address: " );
-  Serial.println ( WiFi.localIP() );
-  WiFi.printDiag(Serial);
+  //if (flag_EnableAP){
+    flag_EnableAP = false;
+    //WiFi.softAP(wifiAPName,wifiAPPwd);
+    initWebServer();
+  //}else{
+    //WiFi.persistent(false);
+    WiFi.begin(ssidWiFi, passwordWiFi);
+    waitWiFiConnected();
+    DBG_PORT.print ( "IP address: " );
+    DBG_PORT.println ( WiFi.localIP() );
+    WiFi.printDiag(Serial);
+  //}
 }
 
 void waitWiFiConnected()
 {
   int i=100;
-  while((WiFiMulti.run() != WL_CONNECTED) && (i>0)){
+  while((WiFi.status() != WL_CONNECTED) && (i>0)){
     delay(100);
     i--;
   }
 }
-
-
+//
+//
 void setHttpSensorJobFlag()
 {
   flag_HttpSensorJob = true;
-  //Serial.println(">>Ticker");
+  //DBG_PORT.println(">>Ticker");
 }
 
-void getSensorData()
+void Job_DHT()
 {
-  lastSensorData.stateHumidity = STATE_ERROR;
-  lastSensorData.stateCelsium = STATE_ERROR;
-  //try DHT22
-  int statusDHT = Dht.read2(PIN_1WIRE,&lastSensorData.Celsium,&lastSensorData.Humidity,NULL);
-  //timestamp
-  if ( !timeMan.flag_TimeIsOK ){
-    lastSensorData.stateTimestamp = STATE_ERROR;
-  }else{
-    lastSensorData.stateTimestamp = STATE_OK;
-    lastSensorData.Timestamp = timeMan.getTimestamp();
-  }
+  resetSensorData();
+  getSensorData_DHT();
+  printSensorData_DHT();
+  mqtt_sendDHTCelsium();
+  mqtt_sendDHTHumidity();
+}
+
+void getSensorData_DHT()
+{
+  resetSensorData();
+  int statusDHT = Dht.read2(PIN_DHT,&lastSensorData.DHTCelsium,&lastSensorData.DHTHumidity,NULL);
   //Data
   if (statusDHT == SimpleDHTErrSuccess){
-    lastSensorData.stateHumidity = STATE_OK;
-    lastSensorData.stateCelsium = STATE_OK;
-  }else{
-    // try DS18b20
-    requestTemperature();
-    lastSensorData.Celsium = DT.getTempCByIndex(0); 
-    if (lastSensorData.Celsium != DEVICE_DISCONNECTED_C){
-      lastSensorData.stateCelsium = STATE_OK;
-    }
+    lastSensorData.stateDHT = STATE_OK;
   }
 }
 
-void HttpSensorJob()
+void resetSensorData()
 {
-  getSensorData();
-  Serial.print(F("Time: "));
-  if (lastSensorData.stateTimestamp == STATE_OK){
-    Serial.print(getFormattedTime(lastSensorData.Timestamp));
-  }else{
-    Serial.print("!!!RTC error");
-    Serial.print(getFormattedTime(lastSensorData.Timestamp));
-  }
-  Serial.print(" => ");
-  if (lastSensorData.stateCelsium == STATE_OK){
-    Serial.print(lastSensorData.Celsium);
-    Serial.print("C");
-  }else{
-    Serial.print("!!!T_READ ERROR");
-  }
-  Serial.print(" | ");
-  if (lastSensorData.stateHumidity == STATE_OK){
-    Serial.print(lastSensorData.Humidity);
-    Serial.print("%");
-  }else{
-    Serial.print("!!!H_READ ERROR");
-  }
-  Serial.println("");
-  if ((lastSensorData.stateCelsium == STATE_OK)&&(lastSensorData.stateTimestamp == STATE_OK))
+  lastSensorData.stateDHT = STATE_ERROR;
+  lastSensorData.stateTimestamp = STATE_ERROR;
+}
+
+void mqtt_sendDHTCelsium()
+{
+  if ((lastSensorData.stateDHT == STATE_OK))
   {
-    sendHttpRequest();
-  }else{
-    Serial.println(F("Cancel post results to server due to errors"));
-  }
-}
-
-void sendHttpRequest()
-{
-  waitWiFiConnected();
-  
-  if (WiFi.status() == WL_CONNECTED){
-    String Params = "&device_name=" + DeviceName +
-                  "&celsium=" + lastSensorData.Celsium +
-                  "&humidity=" + lastSensorData.Humidity +
-                  "&measured_at=" + lastSensorData.Timestamp;
-    String SendUrl = "http://" + HostIP + Url + Params; 
-    Serial.println("Try send data");
-       
-    Serial.println(SendUrl);
-    
-    HTTPClient http;
-    http.begin(SendUrl);
-    int httpCode = http.GET();
-    if (httpCode >0){
-      Serial.println("DataSend result: " + (String)httpCode);
-    }else{
-      Serial.println("DataSend result error: " + (String)http.errorToString(httpCode));
-    }
-    http.end();
-  }else{
-    Serial.println(F("Error: wifi not connected."));
-  }
-}
-
-void requestTemperature()
-{
-  DT.requestTemperatures();
-}
-
-String getNowTimeStr()
-{
-  if ( !timeMan.flag_TimeIsOK )
-  {
-    return "=time error=";
+    sendMQTT(sCelsiumTopic + "/DHT",(String)lastSensorData.DHTCelsium);
   }
   else
   {
-    return getFormattedTime(timeMan.getTimestamp());
+    DBG_PORT.println(F("Cancel publish mqtt celsium due to errors"));
   }
 }
 
+void mqtt_sendDHTHumidity()
+{
+  if ((lastSensorData.stateDHT == STATE_OK))
+  {
+    sendMQTT(sHumidityTopic + "/DHT",(String)lastSensorData.DHTHumidity);
+  }
+  else
+  {
+    DBG_PORT.println(F("Cancel publish mqtt humidity due to errors"));
+  }
+}
+
+void printSensorData_DHT()
+{
+  DBG_PORT.print(F("Time: "));
+  if (lastSensorData.stateTimestamp == STATE_OK){
+    DBG_PORT.print(getFormattedTime(lastSensorData.Timestamp));
+  }else{
+    DBG_PORT.print("!!!RTC error");
+    DBG_PORT.print(getFormattedTime(lastSensorData.Timestamp));
+  }
+  DBG_PORT.print(" => ");
+  if (lastSensorData.stateDHT == STATE_OK){
+    DBG_PORT.print(lastSensorData.DHTCelsium);
+    DBG_PORT.print("C");
+  }else{
+    DBG_PORT.print("!!!T_READ ERROR");
+  }
+  DBG_PORT.print(" | ");
+  if (lastSensorData.stateDHT == STATE_OK){
+    DBG_PORT.print(lastSensorData.DHTHumidity);
+    DBG_PORT.print("%");
+  }else{
+    DBG_PORT.print("!!!H_READ ERROR");
+  }
+  DBG_PORT.println("");
+}
+
+void sendMQTT(String topicName, String value)
+{
+  waitWiFiConnected();
+  if (WiFi.status() == WL_CONNECTED) {
+    if (!mqtt_client.connected()) {
+      DBG_PORT.println("Connecting to MQTT server");
+      if (mqtt_client.connect(MQTT::Connect("arduino_" + DeviceName).set_auth(mqtt_user, mqtt_password))) {
+        DBG_PORT.println("Connected to MQTT server");
+        //mqtt_client.set_callback(callback);
+        //mqtt_client.subscribe("test/led"); // подписывааемся по топик с данными для светодиода
+      } else {
+        DBG_PORT.println("Could not connect to MQTT server"); 
+      }
+    }
+    if (mqtt_client.connected()){
+      //mqtt_client.loop();
+      mqtt_client.publish(topicName,value);
+      mqtt_client.disconnect();
+    }
+  }
+}
 String getFormattedTime(unsigned long rawTime) {
   unsigned long hours = (rawTime % 86400L) / 3600;
   String hoursStr = hours < 10 ? "0" + String(hours) : String(hours);
@@ -245,155 +340,143 @@ String firstZero(int val)
     return (String)val;
   }
 }
-
-//===================================== SPIFFS==============================================================
-String getContentType(String filename) {
-  if (server.hasArg("download")) return "application/octet-stream";
-  else if (filename.endsWith(".htm")) return "text/html";
-  else if (filename.endsWith(".html")) return "text/html";
-  else if (filename.endsWith(".css")) return "text/css";
-  else if (filename.endsWith(".js")) return "application/javascript";
-  else if (filename.endsWith(".png")) return "image/png";
-  else if (filename.endsWith(".gif")) return "image/gif";
-  else if (filename.endsWith(".jpg")) return "image/jpeg";
-  else if (filename.endsWith(".ico")) return "image/x-icon";
-  else if (filename.endsWith(".xml")) return "text/xml";
-  else if (filename.endsWith(".pdf")) return "application/x-pdf";
-  else if (filename.endsWith(".zip")) return "application/x-zip";
-  else if (filename.endsWith(".gz")) return "application/x-gzip";
+//====================== SPIFFS ========================================
+String formatBytes(size_t bytes){
+  if (bytes < 1024){
+    return String(bytes)+"B";
+  } else if(bytes < (1024 * 1024)){
+    return String(bytes/1024.0)+"KB";
+  } else if(bytes < (1024 * 1024 * 1024)){
+    return String(bytes/1024.0/1024.0)+"MB";
+  } else {
+    return String(bytes/1024.0/1024.0/1024.0)+"GB";
+  }
+}
+String getContentType(String filename){
+  if(server.hasArg("download")) return "application/octet-stream";
+  else if(filename.endsWith(".htm")) return "text/html";
+  else if(filename.endsWith(".html")) return "text/html";
+  else if(filename.endsWith(".css")) return "text/css";
+  else if(filename.endsWith(".js")) return "application/javascript";
+  else if(filename.endsWith(".png")) return "image/png";
+  else if(filename.endsWith(".gif")) return "image/gif";
+  else if(filename.endsWith(".jpg")) return "image/jpeg";
+  else if(filename.endsWith(".ico")) return "image/x-icon";
+  else if(filename.endsWith(".xml")) return "text/xml";
+  else if(filename.endsWith(".pdf")) return "application/x-pdf";
+  else if(filename.endsWith(".zip")) return "application/x-zip";
+  else if(filename.endsWith(".gz")) return "application/x-gzip";
   return "text/plain";
 }
-
-bool handleFileRead(String path) {
-  DBG_OUTPUT_PORT.println("handleFileRead: " + path);
-  if (path.endsWith("/")) path += "index.htm";
+bool handleFileRead(String path){
+  DBG_PORT.println("handleFileRead: " + path);
+  if(path.endsWith("/")) path += "index.htm";
   String contentType = getContentType(path);
   String pathWithGz = path + ".gz";
-  if (SPIFFS.exists(pathWithGz) || SPIFFS.exists(path)) {
-    if (SPIFFS.exists(pathWithGz))
+  if(SPIFFS.exists(pathWithGz) || SPIFFS.exists(path)){
+    if(SPIFFS.exists(pathWithGz))
       path += ".gz";
     File file = SPIFFS.open(path, "r");
-    Serial.println(">>StreamBegin");
-    size_t sent = server.streamFile(file, contentType);
-    Serial.println(">>StreamEnd");
+    server.streamFile(file, contentType);
     file.close();
-    Serial.println(">>StreamFileClose");
     return true;
   }
   return false;
 }
-
-//=====================================Web Server===========================================================
-void initWebServer()
+//================options to flash======================================
+void saveOptionToFlash(String fileName, String textOpt)
 {
-  //if ( MDNS.begin ( "esp8266" ) ) {
-  //  Serial.println ( "MDNS responder started" );
-  //}
-  //server.on ( "/", handleRoot );
-  //server.on ( "/setname", handleSetName );
-  //server.on ( "/setdate", handleSetDate );
-  server.on("/last",HTTP_GET, handleAjaxDataGet);
-    //SERVER INIT
-  //list directory
-  server.on("/list", HTTP_GET, handleFileList);
-  //load editor
-  server.on("/edit", HTTP_GET, []() {
-    if (!handleFileRead("/edit.htm")) server.send(404, "text/plain", "FileNotFound");
-  });
-  //create file
-  server.on("/edit", HTTP_PUT, handleFileCreate);
-  //delete file
-  server.on("/edit", HTTP_DELETE, handleFileDelete);
-  //first callback is called after the request has ended with all parsed arguments
-  //second callback handles file uploads at that location
-  server.on("/edit", HTTP_POST, []() {
-    server.send(200, "text/plain", "");
-  }, handleFileUpload);
-  server.onNotFound ( handleNotFound );
-  server.begin();  
+  File file = SPIFFS.open(fileName, "w+");
+  file.println(textOpt);
+  file.close();
 }
 
-void handleAjaxDataGet()
+int readFileLine(String fileName, int iLine, char* buf, int len)
 {
-  Serial.println(">>GET_LAST");
-  String data = "{";
-
-   data +="\"devname\":\"" + DeviceName + "\"" + ",";
-   data +="\"celsium\":\"" + (String)lastSensorData.Celsium + "\",";
-   data +="\"humidity\":\"" + (String)lastSensorData.Humidity + "\",";
-   data +="\"date_now\":\"" + getNowTimeStr() + "\",";
-   data +="\"date_last\":\"" + getFormattedTime(lastSensorData.Timestamp) + "\"";
-
-   data +="}";
-    DBG_OUTPUT_PORT.println(data);
-   server.send(200,"application/json",data);
+  File file = SPIFFS.open(fileName, "r");
+  bool hasLine = fileGotoLine(file, iLine);
+  int lenRead = 0;
+  if (hasLine)
+    lenRead = file.readBytesUntil('\r', buf, len);
+  else {
+    buf[0] = '\0';
+    //DBG_PORT.print("no line");
+  }
+  file.close();
+  DBG_PORT.write("Read ");
+  DBG_PORT.print(fileName);
+  DBG_PORT.write(" line: ");
+  String s = String(*buf);
+  DBG_PORT.write((uint8_t*)buf,lenRead);
+  DBG_PORT.write("\r\n");
+  return lenRead;
 }
 
-void handleNotFound() 
+bool fileGotoLine(File file, int iLine)
 {
-  if (!handleFileRead(server.uri())){
-    String message = "File Not Found\n\n";
-    message += "URI: ";
-    message += server.uri();
-    message += "\nMethod: ";
-    message += ( server.method() == HTTP_GET ) ? "GET" : "POST";
-    message += "\nArguments: ";
-    message += server.args();
-    message += "\n";
-  
-    for ( uint8_t i = 0; i < server.args(); i++ ) {
-      message += " " + server.argName ( i ) + ": " + server.arg ( i ) + "\n";
+  int len = 50;
+  char buf[50];
+  file.seek(0,SeekSet);
+  if (iLine == 0) return true;
+  for (int i = 0; i < iLine; i++)
+  {
+    //DBG_PORT.write("GOTOLine=");
+    //DBG_PORT.print(i, DEC);
+    int l = file.readBytesUntil('\n',buf,len);
+    //DBG_PORT.write((uint8_t*)buf,l);
+    //DBG_PORT.println("");
+    if (file.position() == file.size()) {
+      //DBG_PORT.println("Fail. End of file!");
+      return false;
     }
-
-    server.send ( 404, "text/plain", message );
-  }  
+  }
+  return true;
 }
-
-//============================================web spiffs===================================================
-void handleFileUpload() {
-  if (server.uri() != "/edit") return;
+//=======================WebServer======================================
+void handleFileUpload(){
+  if(server.uri() != "/edit") return;
   HTTPUpload& upload = server.upload();
-  if (upload.status == UPLOAD_FILE_START) {
+  if(upload.status == UPLOAD_FILE_START){
     String filename = upload.filename;
-    if (!filename.startsWith("/")) filename = "/" + filename;
-    DBG_OUTPUT_PORT.print("handleFileUpload Name: "); DBG_OUTPUT_PORT.println(filename);
+    if(!filename.startsWith("/")) filename = "/"+filename;
+    DBG_PORT.print("handleFileUpload Name: "); DBG_PORT.println(filename);
     fsUploadFile = SPIFFS.open(filename, "w");
     filename = String();
-  } else if (upload.status == UPLOAD_FILE_WRITE) {
-    //DBG_OUTPUT_PORT.print("handleFileUpload Data: "); DBG_OUTPUT_PORT.println(upload.currentSize);
-    if (fsUploadFile)
+  } else if(upload.status == UPLOAD_FILE_WRITE){
+    //DBG_PORT.print("handleFileUpload Data: "); DBG_PORT.println(upload.currentSize);
+    if(fsUploadFile)
       fsUploadFile.write(upload.buf, upload.currentSize);
-  } else if (upload.status == UPLOAD_FILE_END) {
-    if (fsUploadFile)
+  } else if(upload.status == UPLOAD_FILE_END){
+    if(fsUploadFile)
       fsUploadFile.close();
-    DBG_OUTPUT_PORT.print("handleFileUpload Size: "); DBG_OUTPUT_PORT.println(upload.totalSize);
+    DBG_PORT.print("handleFileUpload Size: "); DBG_PORT.println(upload.totalSize);
   }
 }
 
-void handleFileDelete() {
-  if (server.args() == 0) return server.send(500, "text/plain", "BAD ARGS");
+void handleFileDelete(){
+  if(server.args() == 0) return server.send(500, "text/plain", "BAD ARGS");
   String path = server.arg(0);
-  DBG_OUTPUT_PORT.println("handleFileDelete: " + path);
-  if (path == "/")
+  DBG_PORT.println("handleFileDelete: " + path);
+  if(path == "/")
     return server.send(500, "text/plain", "BAD PATH");
-  if (!SPIFFS.exists(path))
+  if(!SPIFFS.exists(path))
     return server.send(404, "text/plain", "FileNotFound");
   SPIFFS.remove(path);
   server.send(200, "text/plain", "");
   path = String();
 }
 
-void handleFileCreate() {
-  if (server.args() == 0)
+void handleFileCreate(){
+  if(server.args() == 0)
     return server.send(500, "text/plain", "BAD ARGS");
   String path = server.arg(0);
-  DBG_OUTPUT_PORT.println("handleFileCreate: " + path);
-  if (path == "/")
+  DBG_PORT.println("handleFileCreate: " + path);
+  if(path == "/")
     return server.send(500, "text/plain", "BAD PATH");
-  if (SPIFFS.exists(path))
+  if(SPIFFS.exists(path))
     return server.send(500, "text/plain", "FILE EXISTS");
   File file = SPIFFS.open(path, "w");
-  if (file)
+  if(file)
     file.close();
   else
     return server.send(500, "text/plain", "CREATE FAILED");
@@ -402,42 +485,146 @@ void handleFileCreate() {
 }
 
 void handleFileList() {
-  if (!server.hasArg("dir")) {
-    server.send(500, "text/plain", "BAD ARGS");
-    return;
-  }
-
+  if(!server.hasArg("dir")) {server.send(500, "text/plain", "BAD ARGS"); return;}
+  
   String path = server.arg("dir");
-  DBG_OUTPUT_PORT.println("handleFileList: " + path);
+  DBG_PORT.println("handleFileList: " + path);
   Dir dir = SPIFFS.openDir(path);
   path = String();
 
   String output = "[";
-  while (dir.next()) {
+  while(dir.next()){
     File entry = dir.openFile("r");
     if (output != "[") output += ',';
     bool isDir = false;
     output += "{\"type\":\"";
-    output += (isDir) ? "dir" : "file";
+    output += (isDir)?"dir":"file";
     output += "\",\"name\":\"";
     output += String(entry.name()).substring(1);
     output += "\"}";
     entry.close();
   }
-
+  
   output += "]";
   server.send(200, "text/json", output);
 }
 
-//format bytes
-String formatBytes(size_t bytes) {
-  if (bytes < 1024) {
-    return String(bytes) + "B";
-  } else if (bytes < (1024 * 1024)) {
-    return String(bytes / 1024.0) + "KB";
-  } else if (bytes < (1024 * 1024 * 1024)) {
-    return String(bytes / 1024.0 / 1024.0) + "MB";
-  } else {
-    return String(bytes / 1024.0 / 1024.0 / 1024.0) + "GB";
+void handleGetWiFi()
+{
+  String json="{\"networks\":[";
+  int count = WiFi.scanNetworks();
+  DBG_PORT.println("Networks count:"+String(count));
+  for (int i=0;i<count;i++)
+  {
+    DBG_PORT.println(WiFi.SSID(i));
+    json += "\""+WiFi.SSID(i) + "\"";
+    if (i<(count-1)) 
+      json+=",";
   }
-} 
+  json+="],\"connected\":"+String(wclient.connected())+"}";
+  server.send(200,"text/json",json) ;
+}
+void handleSetWiFi()
+{
+  DBG_PORT.println("handleSetWiFi");
+//  DBG_PORT.println(server.arg("name"));
+  if (server.hasArg("ssid") && (server.hasArg("password"))){
+    if ((server.arg("ssid").length() >=20)||(server.arg("password").length() >=30)){
+      server.send(500,"text/json","{'success': false,'error':'Too long credentials'}");
+    }else{
+      server.arg("ssid").toCharArray(ssidWiFi,20);
+      server.arg("password").toCharArray(passwordWiFi,30);
+      handleGetWiFi();
+      initWifi();
+    }  
+  }else if (server.args() >0){
+    server.send(400,"text/json","{'success': 'false','error':'Bad request. Need query args: name, pwd.'}");
+  }
+}
+
+void handleGetMQTT()
+{
+  String url(mqtt_server);
+  String port(mqtt_port);
+  String login(mqtt_user);
+  String pwd(mqtt_password);
+  //DBG_PORT.println("name: "+ssid);
+  //DBG_PORT.println("pwd: "+pwd);
+  server.send(200,"text/json","{'server':'" + url + "','port':'" + port + "','login':'" + login +"','password':'" + pwd +"'}") ;  
+}
+
+void handleSetMQTT()
+{
+  server.send(501,"text/json","Not Implemented") ;  
+}
+
+void handleGetWebRoot()
+{
+  handleFileRead("/index.html");
+}
+
+void handleGetData()
+{
+  DynamicJsonDocument  docJSON(200);
+  JsonObject root = docJSON.to<JsonObject>();
+  root["name"] = DeviceName;
+  JsonObject dht = root.createNestedObject("DHT");
+  if (lastSensorData.stateDHT == STATE_OK){
+    dht["Celsium"] = lastSensorData.DHTCelsium;
+    dht["Humidity"] = lastSensorData.DHTHumidity;
+  }
+  JsonObject ds = root.createNestedObject("DS18B20");
+  for (int i=0;i<lastSensorData.ds18b20_count;i++)
+  {
+    String dsName = getStringAddress(lastSensorData.thermometers[i].address,8);
+    ds[dsName] = lastSensorData.thermometers[i].celsium;
+  }
+  String result;
+  serializeJsonPretty(root,result);
+  DBG_PORT.println(result);
+  server.send(200,"text/json",result);
+}
+
+void initWebServer()
+{
+  //SPIFFS.begin();
+  {
+    Dir dir = SPIFFS.openDir("/");
+    while (dir.next()) {    
+      String fileName = dir.fileName();
+      size_t fileSize = dir.fileSize();
+      DBG_PORT.printf("FS File: %s, size: %s\n", fileName.c_str(), formatBytes(fileSize).c_str());
+    }
+    DBG_PORT.printf("\n");
+  }
+
+    //list directory
+  server.on("/list", HTTP_GET, handleFileList);
+  //load editor
+  server.on("/edit", HTTP_GET, [](){
+          if(!handleFileRead("/edit.htm")) server.send(404, "text/plain", "FileNotFound");
+          });
+  //create file
+  server.on("/edit", HTTP_PUT, handleFileCreate);
+  //delete file
+  server.on("/edit", HTTP_DELETE, handleFileDelete);
+  //first callback is called after the request has ended with all parsed arguments
+  //second callback handles file uploads at that location
+  server.on("/edit", HTTP_POST, [](){ server.send(200, "text/plain", ""); }, handleFileUpload);
+
+
+  server.on("/",HTTP_GET,handleGetWebRoot);
+    //server.on("/list", HTTP_GET, handleFileList);
+  server.on ("/wifi",HTTP_POST,handleSetWiFi);
+  server.on ("/wifi",HTTP_GET,handleGetWiFi);
+  server.on ("/mqtt",HTTP_POST,handleSetMQTT);
+  server.on ("/mqtt",HTTP_GET,handleGetMQTT);
+  server.on ("/data",HTTP_GET,handleGetData);
+  server.onNotFound([](){
+    if(!handleFileRead(server.uri()))
+      server.send(404, "text/plain", "FileNotFound");
+  });
+  server.begin();
+}
+
+
