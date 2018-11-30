@@ -23,3 +23,6 @@ const String opt_mqtt_file = "/opts/mqtt.p";
 #define opt_mqtt_user_i (2)
 #define opt_mqtt_password_i (3)
 
+const String opt_ds18b20_alias_files = "/ds18/";
+#define arg_ds18b20_id "id"
+#define arg_ds18b20_name "name"

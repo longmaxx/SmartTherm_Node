@@ -19,13 +19,18 @@
           <div class="sidebar-sticky">
             <ul class="nav flex-column"  role="tablist">
               <li class="nav-item">
-                <a class="nav-link" id="wifi-tab" data-toggle="tab" href="#wifisettings" aria-controls="wifisettings" aria-selected="true">
+                <a class="nav-link" data-toggle="tab" href="#wifisettings" aria-controls="wifisettings" aria-selected="true">
                   <span data-feather="wifi"></span> Wifi settings
                 </a>
               </li>
 			  <li class="nav-item">
                 <a class="nav-link" data-toggle="tab" href="#mqttsettings" aria-controls="mqttsettings" aria-selected="false">
                   <span data-feather="server"></span> MQTT settings
+                </a>
+              </li>
+			  <li class="nav-item">
+                <a class="nav-link" data-toggle="tab" href="#ds18b20_names" aria-controls="ds18b20_names" aria-selected="false">
+                  <span data-feather="zap"></span> Aliases
                 </a>
               </li>
 			  <li class="nav-item">
@@ -76,9 +81,8 @@
 						<button type="submit" class="btn btn-primary">Save</button>
 					</form>
 				</div>
-				<div class="tab-pane fade" id="seedata"      role="tabpanel" aria-labelledby="seedata-tab">
-					DATA
-				</div>
+				<div class="tab-pane fade" id="seedata"      role="tabpanel" aria-labelledby="seedata-tab"></div>
+				<div class="tab-pane fade" id="#ds18b20_names"      role="tabpanel" aria-labelledby="ds18b20_names-tab"></div>
 			</div>
           </div>
         </main>

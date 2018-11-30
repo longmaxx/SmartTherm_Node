@@ -386,6 +386,7 @@ bool handleFileRead(String path){
 //================options to flash======================================
 void saveOptionToFlash(String fileName, String textOpt)
 {
+  SPIFFS.remove(fileName);
   File file = SPIFFS.open(fileName, "w+");
   file.println(textOpt);
   file.close();
@@ -511,18 +512,20 @@ void handleFileList() {
 
 void handleGetWiFi()
 {
-  String json="{\"networks\":[";
+  DynamicJsonDocument  docJSON(300);
+  JsonObject root = docJSON.to<JsonObject>();
+  JsonArray arrNetworks =root.createNestedArray("networks"); 
   int count = WiFi.scanNetworks();
   DBG_PORT.println("Networks count:"+String(count));
   for (int i=0;i<count;i++)
   {
     DBG_PORT.println(WiFi.SSID(i));
-    json += "\""+WiFi.SSID(i) + "\"";
-    if (i<(count-1)) 
-      json+=",";
+    arrNetworks.add(WiFi.SSID(i));
   }
-  json+="],\"connected\":"+String(wclient.connected())+"}";
-  server.send(200,"text/json",json) ;
+  root["connected"] = wclient.connected();
+  String result;
+  serializeJsonPretty(root,result);
+  server.send(200,"text/json",result) ;
 }
 void handleSetWiFi()
 {
@@ -531,12 +534,13 @@ void handleSetWiFi()
   if (server.hasArg("ssid") && (server.hasArg("password"))){
     if ((server.arg("ssid").length() >=20)||(server.arg("password").length() >=30)){
       server.send(500,"text/json","{'success': false,'error':'Too long credentials'}");
-    }else{
-      server.arg("ssid").toCharArray(ssidWiFi,20);
-      server.arg("password").toCharArray(passwordWiFi,30);
-      handleGetWiFi();
-      initWifi();
-    }  
+      return;
+    }
+    //server.arg("ssid").toCharArray(ssidWiFi,20);
+    //server.arg("password").toCharArray(passwordWiFi,30);
+    saveOptionToFlash(opt_wifi_file,server.arg("ssid") + "\r\n" + server.arg("password"));
+    initWifi();
+    handleGetWiFi();
   }else if (server.args() >0){
     server.send(400,"text/json","{'success': 'false','error':'Bad request. Need query args: name, pwd.'}");
   }
@@ -585,6 +589,37 @@ void handleGetData()
   server.send(200,"text/json",result);
 }
 
+void handleGetDS18B20Alias()
+{
+  if (  (!server.hasArg(arg_ds18b20_id)) || 
+        ((!server.hasArg(arg_ds18b20_id)) && (!server.hasArg(arg_ds18b20_name)) ) 
+  ){
+    server.send(400,"text/json","{'success': 'false','error':'Bad request. Need query args: " + String(arg_ds18b20_id) + ", "+String(arg_ds18b20_name)+"'}");
+  }
+
+  if (server.hasArg(arg_ds18b20_name)){// we save new name
+    SPIFFS.remove(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id));
+    File f = SPIFFS.open(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id),"w+");
+    f.print(server.arg(arg_ds18b20_name));
+    f.close();
+    server.send(200,"text/json","{'success': true}");
+  }else{// we  want get name
+    if (SPIFFS.exists(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id)))
+    {
+      File f = SPIFFS.open(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id), "r");
+      char buf[20];
+      int len = f.read((uint8_t*)buf,20);
+      DBG_PORT.print("Read alias:");      
+      DBG_PORT.write((uint8_t*)buf,len);
+      f.close();
+      server.send(200,"text/json","{'text':'"+String(buf)+"'}");
+    }else
+    {
+      server.send(200,"text/json","{'name':''}");
+    }
+  }
+}
+
 void initWebServer()
 {
   //SPIFFS.begin();
@@ -620,6 +655,7 @@ void initWebServer()
   server.on ("/mqtt",HTTP_POST,handleSetMQTT);
   server.on ("/mqtt",HTTP_GET,handleGetMQTT);
   server.on ("/data",HTTP_GET,handleGetData);
+  server.on("/ds18b20/alias",HTTP_GET,handleGetDS18B20Alias);
   server.onNotFound([](){
     if(!handleFileRead(server.uri()))
       server.send(404, "text/plain", "FileNotFound");

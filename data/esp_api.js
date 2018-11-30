@@ -4,24 +4,33 @@ $("#wifisettings.tab-pane").show(function(){
 $("#form_mqtt_settings#mqtt_showpassword").click(function(){
 		
 	})
+$('a[href="#seedata"]').on("shown.bs.tab",function(){
+		var dataTab = $("#seedata")
+		var datajson;
+		$.get("./data").done(function (data){
+				dataTab.text(JSON.stringify(data));
+			})
+		dataTab.append();
+	})	
+	
 $("#form_wifi_settings").submit(function(e){
-	//e.PreventDefault();
-	var url = './wifi'
+		//e.PreventDefault();
+		var url = './wifi'
 
-	// if ($("#wifi_ssid").val() == "-1"){
-		// $("#group-ssid").removeClass("success").removeClass("warning").addClass("error");
-		// return;
-	// }
+		// if ($("#wifi_ssid").val() == "-1"){
+			// $("#group-ssid").removeClass("success").removeClass("warning").addClass("error");
+			// return;
+		// }
 
 
-	$.post(url, $(this).serialize())
-		.done(function(data){
-			alert("Set wifi settings OK. " + JSON.stringify(data));
-		})
-		.fail(function(data){
-			alert("Set wifi settings Failed. " + JSON.stringify(data));
-		})
-});
+		$.post(url, $(this).serialize())
+			.done(function(data){
+				alert("Set wifi settings OK. " + JSON.stringify(data));
+			})
+			.fail(function(data){
+				alert("Set wifi settings Failed. " + JSON.stringify(data));
+			})
+	});
 $("#form_mqtt_settings").submit(function(e){
 	var url = './mqtt'
 	
