@@ -597,32 +597,31 @@ void handleGetDS18B20Alias()
     server.send(400,"text/json","{'success': 'false','error':'Bad request. Need query args: " + String(arg_ds18b20_id) + ", "+String(arg_ds18b20_name)+"'}");
   }
 
-  if (server.hasArg(arg_ds18b20_name)){// we save new name
+  if (server.hasArg(arg_ds18b20_name)){
+    // we save new name
     SPIFFS.remove(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id));
     File f = SPIFFS.open(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id),"w+");
     f.print(server.arg(arg_ds18b20_name));
     f.close();
     server.send(200,"text/json","{'success': true}");
-  }else{// we  want get name
+  }else{
+    // we  want get name
+    char buf[20];
+    buf[0] = '\0';
     if (SPIFFS.exists(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id)))
     {
       File f = SPIFFS.open(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id), "r");
-      char buf[20];
       int len = f.read((uint8_t*)buf,20);
       DBG_PORT.print("Read alias:");      
       DBG_PORT.write((uint8_t*)buf,len);
       f.close();
-      server.send(200,"text/json","{'text':'"+String(buf)+"'}");
-    }else
-    {
-      server.send(200,"text/json","{'name':''}");
     }
+    server.send(200,"text/json","{'name':'"+String(buf)+"'}");
   }
 }
 
 void initWebServer()
 {
-  //SPIFFS.begin();
   {
     Dir dir = SPIFFS.openDir("/");
     while (dir.next()) {    
