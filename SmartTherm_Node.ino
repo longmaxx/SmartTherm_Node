@@ -580,8 +580,10 @@ void handleGetData()
   JsonObject ds = root.createNestedObject("DS18B20");
   for (int i=0;i<lastSensorData.ds18b20_count;i++)
   {
-    String dsName = getStringAddress(lastSensorData.thermometers[i].address,8);
-    ds[dsName] = lastSensorData.thermometers[i].celsium;
+    String dsId = getStringAddress(lastSensorData.thermometers[i].address,8);
+    JsonObject dsObj = ds.createNestedObject(dsId);
+    dsObj["celsium"] = lastSensorData.thermometers[i].celsium;
+    dsObj["name"] = getDs18b20Alias(dsId);
   }
   String result;
   serializeJsonPretty(root,result);
@@ -605,21 +607,25 @@ void handleGetDS18B20Alias()
     f.close();
     server.send(200,"text/json","{'success': true}");
   }else{
-    // we  want get name
+    String alias = getDs18b20Alias(server.arg(arg_ds18b20_id));
+    server.send(200,"text/json","{'name':'"+alias+"'}");
+  }
+}
+String getDs18b20Alias(String id)
+{
     char buf[20];
     buf[0] = '\0';
-    if (SPIFFS.exists(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id)))
+    if (SPIFFS.exists(opt_ds18b20_alias_files + id))
     {
-      File f = SPIFFS.open(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id), "r");
+      File f = SPIFFS.open(opt_ds18b20_alias_files + id, "r");
       int len = f.read((uint8_t*)buf,20);
+      buf[len] = '\0';
       DBG_PORT.print("Read alias:");      
       DBG_PORT.write((uint8_t*)buf,len);
       f.close();
     }
-    server.send(200,"text/json","{'name':'"+String(buf)+"'}");
-  }
+    return String(buf);
 }
-
 void initWebServer()
 {
   {
@@ -645,8 +651,6 @@ void initWebServer()
   //first callback is called after the request has ended with all parsed arguments
   //second callback handles file uploads at that location
   server.on("/edit", HTTP_POST, [](){ server.send(200, "text/plain", ""); }, handleFileUpload);
-
-
   server.on("/",HTTP_GET,handleGetWebRoot);
     //server.on("/list", HTTP_GET, handleFileList);
   server.on ("/wifi",HTTP_POST,handleSetWiFi);
