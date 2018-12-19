@@ -81,6 +81,7 @@ void setup() {
 void loop() { 
   server.handleClient();
   if (flag_HttpSensorJob){
+    mqttConnect();
     flag_HttpSensorJob = false;
     Job_DHT();
     Job_DS18B20();
@@ -298,11 +299,9 @@ void printSensorData_DHT()
   DBG_PORT.println("");
 }
 
-void sendMQTT(String topicName, String value)
+void mqttConnect()
 {
-  waitWiFiConnected();
-  if (WiFi.status() == WL_CONNECTED) {
-    if (!mqtt_client.connected()) {
+  if (!mqtt_client.connected()) {
       DBG_PORT.println("Connecting to MQTT server");
       if (mqtt_client.connect(MQTT::Connect("arduino_" + DeviceName).set_auth(mqtt_user, mqtt_password))) {
         DBG_PORT.println("Connected to MQTT server");
@@ -312,6 +311,12 @@ void sendMQTT(String topicName, String value)
         DBG_PORT.println("Could not connect to MQTT server"); 
       }
     }
+}
+
+void sendMQTT(String topicName, String value)
+{
+  waitWiFiConnected();
+  if (WiFi.status() == WL_CONNECTED) {
     if (mqtt_client.connected()){
       //mqtt_client.loop();
       mqtt_client.publish(topicName,value);
