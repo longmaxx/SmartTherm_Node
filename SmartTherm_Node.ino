@@ -181,6 +181,29 @@ void initDS18B20()
   DT.begin();
   //DT.getAddress(&DS18B20Addr,0);
   findAllDS18B20();
+  updateSavedDS18IDS();
+}
+
+void updateSavedDS18IDS()
+{
+  for (int i=0;i<lastSensorData.ds18b20_count;i++)
+  {
+    //find file by address
+    String path = opt_ds18b20_alias_files + getStringAddress(lastSensorData.thermometers[i].address,8);
+    if (!SPIFFS.exists(path))
+    {
+        File file = SPIFFS.open(path, "w+");
+        if (file)
+        {
+          DBG_PORT.println("SPIFFS file created: " + path);
+          file.close();
+        }
+        else
+        {
+          DBG_PORT.println("!ERROR SPIFFS file create: " + path);
+        }
+    }
+  }
 }
 
 void initMQTT()
@@ -574,7 +597,7 @@ void handleGetWebRoot()
 
 void handleGetData()
 {
-  DynamicJsonDocument  docJSON(200);
+  DynamicJsonDocument  docJSON(500);
   JsonObject root = docJSON.to<JsonObject>();
   root["name"] = DeviceName;
   JsonObject dht = root.createNestedObject("DHT");
@@ -606,28 +629,41 @@ void handleGetDS18B20Alias()
 
   if (server.hasArg(arg_ds18b20_name)){
     // we save new name
+    DBG_PORT.println("Saving DS18b0 alias: "+server.arg(arg_ds18b20_id));
     SPIFFS.remove(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id));
     File f = SPIFFS.open(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id),"w+");
     f.print(server.arg(arg_ds18b20_name));
     f.close();
+    
     server.send(200,"text/json","{'success': true}");
   }else{
     String alias = getDs18b20Alias(server.arg(arg_ds18b20_id));
+    DBG_PORT.println("Just getting an ID for DS18b20...");
     server.send(200,"text/json","{'name':'"+alias+"'}");
   }
 }
+
 String getDs18b20Alias(String id)
 {
     char buf[20];
     buf[0] = '\0';
-    if (SPIFFS.exists(opt_ds18b20_alias_files + id))
+    String path = opt_ds18b20_alias_files + id;
+    if (SPIFFS.exists(path))
     {
-      File f = SPIFFS.open(opt_ds18b20_alias_files + id, "r");
-      int len = f.read((uint8_t*)buf,20);
-      buf[len] = '\0';
-      DBG_PORT.print("Read alias:");      
-      DBG_PORT.write((uint8_t*)buf,len);
-      f.close();
+      File f = SPIFFS.open(path, "r");
+      if (f)
+      {
+        int len = f.read((uint8_t*)buf,20);
+        buf[len] = '\0';
+        DBG_PORT.print("Read alias (" + id + ") :");      
+        DBG_PORT.write((uint8_t*)buf,len);
+        DBG_PORT.println("");
+        f.close();
+      }
+      else
+      {
+        DBG_PORT.println("Failed to  open alias file: " + path);    
+      }
     }
     return String(buf);
 }

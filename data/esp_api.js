@@ -1,5 +1,7 @@
+//var root_url = "http://demo9239551.mockable.io"
+var root_url = "."
 $("#wifisettings.tab-pane").show(function(){
-		$.get("./wifi","").done(callback_get_wifi_settings).fail(function(data){alert('GetWiFiFailed: '+JSON.stringify(data))});
+		$.get(root_url+"/wifi","").done(callback_get_wifi_settings).fail(function(data){alert('GetWiFiFailed: '+JSON.stringify(data))});
 	});
 $("#form_mqtt_settings#mqtt_showpassword").click(function(){
 		
@@ -7,20 +9,36 @@ $("#form_mqtt_settings#mqtt_showpassword").click(function(){
 $('a[href="#seedata"]').on("shown.bs.tab",function(){
 		var dataTab = $("#seedata")
 		var datajson;
-		$.get("./data").done(function (data){
+		$.get(root_url+"/data").done(function (data){
 				//dataTab.text(JSON.stringify(data));
 				//alert(data);
 				if (typeof(data) == "string"){
 					data = JSON.parse(data)
 				}
 				var table = $('#seedata #tblData');
-				table.children('tr').remove();
-				table.append('<tr><th>ID</th><th>Name</th><th>Value</th></tr>')
+				table.not(':first').not(':last').remove();
+				table.append('<tr><th>Name</th><th>Celsuim</th><th>ID</th></tr>')
 				ds = data['DS18B20'];
-				for (var id in ds){
+				for (var id in ds)
+				{
+					var tr = $("<tr>");
+
 					var curName = ds[id].name?ds[id].name:"";
-					table.append('<tr><td>'+id+'</td><td>'+curName+'</td><td>'+ds[id].celsium+'</td></tr>');
+					var td_name = $("<td>")
+					var input1 = $("<input>",{"type":"text", "name":"name", "id":id, "value":curName})
+					td_name.append(input1);
+					var btnSave = $("<button>",{"text":"Save", "onclick":"saveDS18Name(this)"})
+					td_name.append(btnSave)
+					tr.append(td_name)
 					
+					var td_celsium = $("<td>",{"text": ds[id].celsium});
+					tr.append(td_celsium)
+					
+
+					var td_id = $("<td>",{"text":id})
+					tr.append(td_id)
+
+					table.append(tr);
 				}
 			}).fail(function(a,b,c){alert ("fail " + b)})
 		dataTab.append();
@@ -28,7 +46,7 @@ $('a[href="#seedata"]').on("shown.bs.tab",function(){
 	
 $("#form_wifi_settings").submit(function(e){
 		//e.PreventDefault();
-		var url = './wifi'
+		var url = root_url+'/wifi'
 
 		// if ($("#wifi_ssid").val() == "-1"){
 			// $("#group-ssid").removeClass("success").removeClass("warning").addClass("error");
@@ -45,9 +63,41 @@ $("#form_wifi_settings").submit(function(e){
 			})
 	});
 $("#form_mqtt_settings").submit(function(e){
-	var url = './mqtt'
+	var url = root_url+'/mqtt'
 	
 	$.post(url,$(this).serialize())
+		.done(function(data){
+			alert("Set mqtt settings OK. " + JSON.stringify(data));
+		})
+		.fail(function(data){
+			alert("Set mqtt settings Failed. " + JSON.stringify(data));
+		})
+	//e.PreventDefaults();
+});
+
+function saveDS18Name(e)
+{
+	alert(e.parentNode.parentNode.childNodes[2].textContent);
+	var url = root_url+'/ds18b20/alias'
+	var params = {  "id":e.parentNode.parentNode.childNodes[2].textContent,
+					"name": e.parentNode.childNodes[0].value
+				 }
+	//alert(JSON.stringify(params))
+	$.get(url,params)
+		.done(function(data){
+			alert("Set Alias settings OK. " + JSON.stringify(data));
+		})
+		.fail(function(data){
+			alert("Set Alias settings Failed. " + JSON.stringify(data));
+		})
+}
+
+
+$("#form_ds18b20_setname").submit(function(e){
+	var url = root_url+'/ds18b20/alias'
+	var params = $(this).serialize()
+	alert(JSON.stringify(params))
+	$.get(url,params)
 		.done(function(data){
 			alert("Set mqtt settings OK. " + JSON.stringify(data));
 		})
