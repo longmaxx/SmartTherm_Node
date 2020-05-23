@@ -183,29 +183,6 @@ void initDS18B20()
   DT.begin();
   //DT.getAddress(&DS18B20Addr,0);
   findAllDS18B20();
-  updateSavedDS18IDS();
-}
-
-void updateSavedDS18IDS()
-{
-  for (int i=0;i<lastSensorData.ds18b20_count;i++)
-  {
-    //find file by address
-    String path = opt_ds18b20_alias_files + getStringAddress(lastSensorData.thermometers[i].address,8);
-    if (!SPIFFS.exists(path))
-    {
-        File file = SPIFFS.open(path, "w+");
-        if (file)
-        {
-          DBG_PORT.println("SPIFFS file created: " + path);
-          file.close();
-        }
-        else
-        {
-          DBG_PORT.println("!ERROR SPIFFS file create: " + path);
-        }
-    }
-  }
 }
 
 void initMQTT()
