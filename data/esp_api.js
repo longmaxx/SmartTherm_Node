@@ -16,20 +16,25 @@ $('a[href="#seedata"]').on("shown.bs.tab",function(){
 					data = JSON.parse(data)
 				}
 				var table = $('#seedata #tblData');
-				table.not(':first').not(':last').remove();
+				table.children("tr").remove();
 				table.append('<tr><th>Name</th><th>Celsuim</th><th>ID</th></tr>')
 				ds = data['DS18B20'];
 				for (var id in ds)
 				{
 					var tr = $("<tr>");
-
-					var curName = ds[id].name?ds[id].name:"";
-					var td_name = $("<td>")
-					var input1 = $("<input>",{"type":"text", "name":"name", "id":id, "value":curName})
-					td_name.append(input1);
-					var btnSave = $("<button>",{"text":"Save", "onclick":"saveDS18Name(this)"})
-					td_name.append(btnSave)
-					tr.append(td_name)
+					tr.append("<td>")
+					var td = tr.find("td")
+					td.append('<div class="input-group mb-3">\
+								  <input type="text" class="form-control" placeholder="No name yet" aria-label="Name" aria-describedby="basic-addon2">\
+								  <div class="input-group-append">\
+									<button class=" save btn btn-outline-secondary" type="button">Save</button>\
+								  </div>\
+								</div>');
+					var input = td.find("input #name")
+					input.value = ds[id].name?ds[id].name:"";
+					input.id = id;
+					var btnSave = td.find("button .save");
+					btnSave.click = "saveDS18Name(this)";
 					
 					var td_celsium = $("<td>",{"text": ds[id].celsium});
 					tr.append(td_celsium)
@@ -41,7 +46,7 @@ $('a[href="#seedata"]').on("shown.bs.tab",function(){
 					table.append(tr);
 				}
 			}).fail(function(a,b,c){alert ("fail " + b)})
-		dataTab.append();
+		//dataTab.append();
 	})	
 	
 $("#form_wifi_settings").submit(function(e){
@@ -111,6 +116,7 @@ function callback_get_wifi_settings(data)
 	if (typeof(data) == "string"){
 		data = JSON.parse(data)
 	}
+	alert(JSON.stringify(data));
 	var selSSID = $("#wifi_ssid");	
 	$.each(data.networks, function (index, name){selSSID.append('<option value="'+name+'">'+name+'</option>')});
 	
