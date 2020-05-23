@@ -18,10 +18,11 @@ const String opt_wifi_file = "/opts/wifi.p";
 #define opt_wifi_ssid_i (0)
 #define opt_wifi_password_i (1)
 const String opt_mqtt_file = "/opts/mqtt.p";
-#define opt_mqtt_server_i (0)
-#define opt_mqtt_port_i (1)
-#define opt_mqtt_user_i (2)
-#define opt_mqtt_password_i (3)
+#define opt_mqtt_enabled_i (0)
+#define opt_mqtt_server_i (1)
+#define opt_mqtt_port_i (2)
+#define opt_mqtt_user_i (3)
+#define opt_mqtt_password_i (4)
 
 const String opt_ds18b20_alias_files = "/ds18/";
 #define arg_ds18b20_id "id"

@@ -63,6 +63,7 @@ boolean flag_HttpSensorJob = true;// timer flag for refresh Sensor data and send
 //PubSubClient mqtt_client(wclient, mqtt_server, mqtt_port);
 //PubSubClient mqtt_client((uint8_t*)mqtt_server,(uint16_t) mqtt_port, (Client)wclient);
 PubSubClient mqtt_client(wclient);
+boolean mqtt_enabled = false;
 
 void setup() {
   pinMode(PIN_BTN_CONFIG,INPUT);
@@ -81,7 +82,8 @@ void setup() {
 void loop() { 
   server.handleClient();
   if (flag_HttpSensorJob){
-    mqttConnect();
+    if(mqtt_enabled)
+      mqttConnect();
     flag_HttpSensorJob = false;
     Job_DHT();
     Job_DS18B20();
@@ -208,9 +210,12 @@ void updateSavedDS18IDS()
 
 void initMQTT()
 {
-  readMqttSettingsFromFlash();
-  String srv(mqtt_server);
-  mqtt_client.set_server(srv,String(mqtt_port).toInt());
+  if (mqtt_enabled)
+  {
+    readMqttSettingsFromFlash();
+    String srv(mqtt_server);
+    mqtt_client.set_server(srv,String(mqtt_port).toInt());
+  }
 }
 
 void initWifi()
@@ -223,6 +228,7 @@ void initWifi()
     initWebServer();
   //}else{
     //WiFi.persistent(false);
+    DBG_PORT.println("Before connect: "+String(ssidWiFi));
     WiFi.begin(ssidWiFi, passwordWiFi);
     waitWiFiConnected();
     DBG_PORT.print ( "IP address: " );
@@ -338,13 +344,17 @@ void mqttConnect()
 
 void sendMQTT(String topicName, String value)
 {
-  waitWiFiConnected();
-  if (WiFi.status() == WL_CONNECTED) {
-    if (mqtt_client.connected()){
-      //mqtt_client.loop();
-      mqtt_client.publish(topicName,value);
-      mqtt_client.disconnect();
+  if (mqtt_enabled)
+  {
+    waitWiFiConnected();
+    if (WiFi.status() == WL_CONNECTED) {
+      if (mqtt_client.connected()){
+        //mqtt_client.loop();
+        mqtt_client.publish(topicName,value);
+        mqtt_client.disconnect();
+      }
     }
+    DBG_PORT.println("MQTT is disabled");
   }
 }
 String getFormattedTime(unsigned long rawTime) {
@@ -551,6 +561,8 @@ void handleGetWiFi()
     arrNetworks.add(WiFi.SSID(i));
   }
   root["connected"] = wclient.connected();
+  DBG_PORT.println(ssidWiFi);
+  root["ID"] = String(ssidWiFi);
   String result;
   serializeJsonPretty(root,result);
   server.send(200,"text/json",result) ;
