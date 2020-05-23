@@ -24,8 +24,8 @@ String DeviceName = "nano";
 //String wifiPwd  = "MyKotNet123";
 
 
-char* wifiAPName = "AP_nano";//+DeviceName;
-char* wifiAPPwd = "12345678";
+char wifiAPName[] = "AP_nano";//+DeviceName;
+char wifiAPPwd[] = "12345678";
 bool flag_EnableAP = false;
 
 String sCelsiumTopic = DeviceName + "/Celsium";
@@ -228,7 +228,6 @@ void initWifi()
     initWebServer();
   //}else{
     //WiFi.persistent(false);
-    DBG_PORT.println("Before connect: "+String(ssidWiFi));
     WiFi.begin(ssidWiFi, passwordWiFi);
     waitWiFiConnected();
     DBG_PORT.print ( "IP address: " );
@@ -561,7 +560,6 @@ void handleGetWiFi()
     arrNetworks.add(WiFi.SSID(i));
   }
   root["connected"] = wclient.connected();
-  DBG_PORT.println(ssidWiFi);
   root["ID"] = String(ssidWiFi);
   String result;
   serializeJsonPretty(root,result);
@@ -718,5 +716,3 @@ void initWebServer()
   });
   server.begin();
 }
-
-
