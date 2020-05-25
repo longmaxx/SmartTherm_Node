@@ -53,6 +53,10 @@ File fsUploadFile;
 
 OneWire Wire1Port(PIN_1WIRE);
 DallasTemperature DT(&Wire1Port);
+char oneWire_Phaze = 0;
+#define ONEWIRE_PHAZE_IDLE (0)
+#define ONEWIRE_PHAZE_MEASURING (1)
+#define ONEWIRE_PHAZE_READY (2)
 SensorData lastSensorData;
   
 DeviceAddress DS18B20Addr;// address of DS19b20 1-wire thermometer  
@@ -88,6 +92,8 @@ void loop() {
     Job_DHT();
     Job_DS18B20();
   }
+  if (oneWire_Phaze != ONEWIRE_PHAZE_IDLE)
+    Job_DS18B20();
   if (mqtt_client.connected()){
     mqtt_client.loop();// execute  subscribed actions
   }
@@ -122,13 +128,30 @@ void readMqttSettingsFromFlash()
 
 void Job_DS18B20()
 {
-  DT.requestTemperatures();
-  for (int i=0;i<lastSensorData.ds18b20_count;i++){
-    int c = DT.getTempC(lastSensorData.thermometers[i].address);
-    lastSensorData.thermometers[i].celsium = c;
-    String sTopic = sCelsiumTopic + "/DS18B20/" + getStringAddress(lastSensorData.thermometers[i].address,8);
-    DBG_PORT.println(sTopic);
-    sendMQTT(sTopic,(String)lastSensorData.DHTCelsium);
+  switch (oneWire_Phaze)
+  {
+    case ONEWIRE_PHAZE_IDLE :
+        oneWire_Phaze = ONEWIRE_PHAZE_MEASURING;
+        DT.requestTemperatures();
+        break;
+    case ONEWIRE_PHAZE_MEASURING : 
+        if (DT.isConversionComplete())
+           oneWire_Phaze = ONEWIRE_PHAZE_READY;  
+        break;
+    case ONEWIRE_PHAZE_READY :    
+        for (int i=0;i<lastSensorData.ds18b20_count;i++)
+        {
+          int c = DT.getTempC(lastSensorData.thermometers[i].address);
+          lastSensorData.thermometers[i].celsium = c;
+          String sTopic = sCelsiumTopic + "/DS18B20/" + getStringAddress(lastSensorData.thermometers[i].address,8);
+          DBG_PORT.println(sTopic + " : " + c);
+          sendMQTT(sTopic,(String)c);
+        }
+        oneWire_Phaze = ONEWIRE_PHAZE_IDLE;
+        break;
+    default: 
+        DBG_PORT.println("ERROR! Unknown OneWire phaze");
+        oneWire_Phaze = ONEWIRE_PHAZE_IDLE;    
   }
 }
 
@@ -180,7 +203,9 @@ void initDS18B20()
 {
   // init onewire DS18b20
   //DT.setOneWire(&Wire1Port);
+  oneWire_Phaze = ONEWIRE_PHAZE_IDLE;
   DT.begin();
+  DT.setWaitForConversion(false);
   //DT.getAddress(&DS18B20Addr,0);
   findAllDS18B20();
 }
@@ -665,7 +690,6 @@ void initWebServer()
     }
     DBG_PORT.printf("\n");
   }
-
     //list directory
   server.on("/list", HTTP_GET, handleFileList);
   //load editor
