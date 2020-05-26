@@ -25,16 +25,17 @@ $('a[href="#seedata"]').on("shown.bs.tab",function(){
 					tr.append("<td>")
 					var td = tr.find("td")
 					td.append('<div class="input-group mb-3">\
-								  <input type="text" class="form-control" placeholder="No name yet" aria-label="Name" aria-describedby="basic-addon2">\
+								  <input type="text" id="name" class="form-control" placeholder="No name yet" aria-label="Name" aria-describedby="basic-addon2">\
 								  <div class="input-group-append">\
-									<button class=" save btn btn-outline-secondary" type="button">Save</button>\
+									<button class="save btn btn-outline-secondary" type="button">Save</button>\
 								  </div>\
 								</div>');
-					var input = td.find("input #name")
-					input.value = ds[id].name?ds[id].name:"";
+					var input = td.find("#name")
+					input.val( ds[id].name?ds[id].name:"");
 					input.id = id;
-					var btnSave = td.find("button .save");
-					btnSave.click = "saveDS18Name(this)";
+					var btnSave = td.find(":button");
+					btnSave.removeAttr("onclick")
+					btnSave.attr("onclick","saveDS18Name(this)");
 					
 					var td_celsium = $("<td>",{"text": ds[id].celsium});
 					tr.append(td_celsium)
@@ -82,10 +83,10 @@ $("#form_mqtt_settings").submit(function(e){
 
 function saveDS18Name(e)
 {
-	alert(e.parentNode.parentNode.childNodes[2].textContent);
+	alert(e.parentNode.parentNode.parentNode.parentNode.childNodes[2].textContent);
 	var url = root_url+'/ds18b20/alias'
-	var params = {  "id":e.parentNode.parentNode.childNodes[2].textContent,
-					"name": e.parentNode.childNodes[0].value
+	var params = {  "id":e.parentNode.parentNode.parentNode.parentNode.childNodes[2].textContent,
+					"name": e.parentNode.parentNode.childNodes[1].value
 				 }
 	//alert(JSON.stringify(params))
 	$.get(url,params)
