@@ -1,54 +1,12 @@
 //var root_url = "http://demo9239551.mockable.io"
 var root_url = "."
-$("#wifisettings.tab-pane").show(function(){
+$("a[href='#wifisettings']").on("shown.bs.tab",function(){
 		$.get(root_url+"/wifi","").done(callback_get_wifi_settings).fail(function(data){alert('GetWiFiFailed: '+JSON.stringify(data))});
 	});
 $("#form_mqtt_settings#mqtt_showpassword").click(function(){
-		
+		alert ("TODO show password");
 	})
-$('a[href="#seedata"]').on("shown.bs.tab",function(){
-		var dataTab = $("#seedata")
-		var datajson;
-		$.get(root_url+"/data").done(function (data){
-				//dataTab.text(JSON.stringify(data));
-				//alert(data);
-				if (typeof(data) == "string"){
-					data = JSON.parse(data)
-				}
-				var table = $('#seedata #tblData');
-				table.children("tr").remove();
-				table.append('<tr><th>Name</th><th>Celsuim</th><th>ID</th></tr>')
-				ds = data['DS18B20'];
-				for (var id in ds)
-				{
-					var tr = $("<tr>");
-					tr.append("<td>")
-					var td = tr.find("td")
-					td.append('<div class="input-group mb-3">\
-								  <input type="text" id="name" class="form-control" placeholder="No name yet" aria-label="Name" aria-describedby="basic-addon2">\
-								  <div class="input-group-append">\
-									<button class="save btn btn-outline-secondary" type="button">Save</button>\
-								  </div>\
-								</div>');
-					var input = td.find("#name")
-					input.val( ds[id].name?ds[id].name:"");
-					input.id = id;
-					var btnSave = td.find(":button");
-					btnSave.removeAttr("onclick")
-					btnSave.attr("onclick","saveDS18Name(this)");
-					
-					var td_celsium = $("<td>",{"text": ds[id].celsium});
-					tr.append(td_celsium)
-					
-
-					var td_id = $("<td>",{"text":id})
-					tr.append(td_id)
-
-					table.append(tr);
-				}
-			}).fail(function(a,b,c){alert ("fail " + b)})
-		//dataTab.append();
-	})	
+$('a[href="#seedata"]').on("shown.bs.tab",fillDataTab())	
 	
 $("#form_wifi_settings").submit(function(e){
 		//e.PreventDefault();
@@ -127,6 +85,52 @@ function getDS18B20Alias(id)
 {
 	return "todo"
 }
+
+function fillDataTab()
+{
+	var dataTab = $("#seedata")
+	var datajson;
+	$.get(root_url+"/data").done(function (data){
+			//dataTab.text(JSON.stringify(data));
+			//alert(data);
+			if (typeof(data) == "string"){
+				data = JSON.parse(data)
+			}
+			var table = $('#seedata #tblData');
+			table.children("tr").remove();
+			table.append('<tr><th>Name</th><th>Celsuim</th><th>ID</th></tr>')
+			ds = data['DS18B20'];
+			for (var id in ds)
+			{
+				var tr = $("<tr>");
+				tr.append("<td>")
+				var td = tr.find("td")
+				td.append('<div class="input-group mb-3">\
+							  <input type="text" id="name" class="form-control" placeholder="No name yet" aria-label="Name" aria-describedby="basic-addon2">\
+							  <div class="input-group-append">\
+								<button class="save btn btn-outline-secondary" type="button">Save</button>\
+							  </div>\
+							</div>');
+				var input = td.find("#name")
+				input.val( ds[id].name?ds[id].name:"");
+				input.id = id;
+				var btnSave = td.find(":button");
+				btnSave.removeAttr("onclick")
+				btnSave.attr("onclick","saveDS18Name(this)");
+				
+				var td_celsium = $("<td>",{"text": ds[id].celsium});
+				tr.append(td_celsium)
+				
+
+				var td_id = $("<td>",{"text":id})
+				tr.append(td_id)
+
+				table.append(tr);
+			}
+		}).fail(function(a,b,c){alert ("fail " + b)})
+	//dataTab.append();
+}
+
 // Example starter JavaScript for disabling form submissions if there are invalid fields
 (function() {
   'use strict';
