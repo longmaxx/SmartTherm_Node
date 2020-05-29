@@ -57,7 +57,7 @@ char oneWire_Phaze = 0;
 #define ONEWIRE_PHAZE_IDLE (0)
 #define ONEWIRE_PHAZE_MEASURING (1)
 #define ONEWIRE_PHAZE_READY (2)
-SensorData lastSensorData;
+DHTSensorData lastSensorData;
   
 DeviceAddress DS18B20Addr;// address of DS19b20 1-wire thermometer  
 boolean flag_HttpSensorJob = true;// timer flag for refresh Sensor data and send; flag for use by Ticker
@@ -80,15 +80,15 @@ void setup() {
   initMQTT();
   initWifi();
   initDS18B20();
-  ticker.attach(60,setHttpSensorJobFlag);
+  ticker.attach(30,setHttpSensorJobFlag);
 }
 
 void loop() { 
   server.handleClient();
   if (flag_HttpSensorJob){
+    flag_HttpSensorJob = false;
     if(mqtt_enabled)
       mqttConnect();
-    flag_HttpSensorJob = false;
     Job_DHT();
     Job_DS18B20();
   }
@@ -139,11 +139,11 @@ void Job_DS18B20()
            oneWire_Phaze = ONEWIRE_PHAZE_READY;  
         break;
     case ONEWIRE_PHAZE_READY :    
-        for (int i=0;i<lastSensorData.ds18b20_count;i++)
+        for (int i=0;i<DS18B20_count;i++)
         {
-          int c = DT.getTempC(lastSensorData.thermometers[i].address);
-          lastSensorData.thermometers[i].celsium = c;
-          String sTopic = sCelsiumTopic + "/DS18B20/" + getStringAddress(lastSensorData.thermometers[i].address,8);
+          int c = DT.getTempC(DS18B20_Values[i].address);
+          DS18B20_Values[i].celsium = c;
+          String sTopic = sCelsiumTopic + "/DS18B20/" + getStringAddress(DS18B20_Values[i].address,8);
           DBG_PORT.println(sTopic + " : " + c);
           sendMQTT(sTopic,(String)c);
         }
@@ -168,7 +168,7 @@ String getStringAddress(DeviceAddress addr, int len)
 
 void findAllDS18B20 ()
 {
-   lastSensorData.ds18b20_count = 0;
+   DS18B20_count = 0;
    DBG_PORT.println(F("Begin search DS18B20 devices"));
    int allCount = DT.getDeviceCount();
    DBG_PORT.print(F("All device count = "));
@@ -180,23 +180,16 @@ void findAllDS18B20 ()
      DT.getAddress(tmpAddr,i);
      if (DT.validFamily(tmpAddr)){
         DBG_PORT.printf("Addr%i:",i);
-        printAddress(tmpAddr);
+        DBG_PORT.print(getStringAddress(tmpAddr,8));
         DBG_PORT.println();
-        memcpy(lastSensorData.thermometers[i].address,tmpAddr,sizeof(DeviceAddress));
-        (lastSensorData.ds18b20_count)++;
-        if (lastSensorData.ds18b20_count > MAX_DS18B20_COUNT){
+        memcpy(DS18B20_Values[i].address,tmpAddr,sizeof(DeviceAddress));
+        (DS18B20_count)++;
+        if (DS18B20_count > MAX_DS18B20_COUNT){
           DBG_PORT.println(F("Max device limit!!! Stop search")); 
           return; 
         }
      }
    }
-}
-
-void printAddress(DeviceAddress addr)
-{
-  for (int k=0;k<8;k++){
-    DBG_PORT.printf(" %02X",addr[k] );
-  }
 }
 
 void initDS18B20()
@@ -618,11 +611,11 @@ void handleGetData()
     dht["Humidity"] = lastSensorData.DHTHumidity;
   }
   JsonObject ds = root.createNestedObject("DS18B20");
-  for (int i=0;i<lastSensorData.ds18b20_count;i++)
+  for (int i=0;i<DS18B20_count;i++)
   {
-    String dsId = getStringAddress(lastSensorData.thermometers[i].address,8);
+    String dsId = getStringAddress(DS18B20_Values[i].address,8);
     JsonObject dsObj = ds.createNestedObject(dsId);
-    dsObj["celsium"] = lastSensorData.thermometers[i].celsium;
+    dsObj["celsium"] = DS18B20_Values[i].celsium;
     dsObj["name"] = getDs18b20Alias(dsId);
   }
   String result;
@@ -641,12 +634,14 @@ void handleGetDS18B20Alias()
 
   if (server.hasArg(arg_ds18b20_name)){
     // we save new name
-    DBG_PORT.println("Saving DS18b0 alias: "+server.arg(arg_ds18b20_id));
+    DBG_PORT.println("Saving DS18b20 alias: "+server.arg(arg_ds18b20_id) + " = " +server.arg(arg_ds18b20_name) );
     SPIFFS.remove(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id));
-    File f = SPIFFS.open(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id),"w+");
-    f.print(server.arg(arg_ds18b20_name));
-    f.close();
-    
+    if (server.arg(arg_ds18b20_name) != "")// don't create file fr empty name
+    {
+      File f = SPIFFS.open(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id),"w+");
+      f.print(server.arg(arg_ds18b20_name));
+      f.close();
+    }
     server.send(200,"text/json","{'success': true}");
   }else{
     String alias = getDs18b20Alias(server.arg(arg_ds18b20_id));
@@ -706,10 +701,10 @@ void initWebServer()
   server.on("/",HTTP_GET,handleGetWebRoot);
     //server.on("/list", HTTP_GET, handleFileList);
   server.on ("/wifi",HTTP_POST,handleSetWiFi);
-  server.on ("/wifi",HTTP_GET,handleGetWiFi);
+  server.on ("/wifi",HTTP_GET, handleGetWiFi);
   server.on ("/mqtt",HTTP_POST,handleSetMQTT);
-  server.on ("/mqtt",HTTP_GET,handleGetMQTT);
-  server.on ("/data",HTTP_GET,handleGetData);
+  server.on ("/mqtt",HTTP_GET, handleGetMQTT);
+  server.on ("/data",HTTP_GET, handleGetData);
   server.on("/ds18b20/alias",HTTP_GET,handleGetDS18B20Alias);
   server.onNotFound([](){
     if(!handleFileRead(server.uri()))

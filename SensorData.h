@@ -1,6 +1,6 @@
-#ifndef DS1307_H
+//#ifndef DS1307_H
   //#include <DS1307.h>
-#endif  
+//#endif  
 #ifndef SENSORDATA_H
   #define SENSORDATA_H
 
@@ -22,12 +22,9 @@ typedef struct {
     byte stateDHT = STATE_OK;
     float DHTCelsium;// celsium
     float DHTHumidity;
-    
-    ds18b20_Result thermometers[MAX_DS18B20_COUNT]; 
-    unsigned char ds18b20_count = 0;
-    
-} SensorData;
+} DHTSensorData;
 
-
+ds18b20_Result DS18B20_Values[MAX_DS18B20_COUNT];
+unsigned char  DS18B20_count = 0;
 
 #endif 
