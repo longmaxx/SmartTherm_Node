@@ -9,6 +9,7 @@ char passwordWiFi[WIFI_PASSWORD_LEN_MAX];
 #define MQTT_USER_LEN_MAX (20)
 #define MQTT_PASSWORD_LEN_MAX (30)
 
+bool mqtt_enabled = false;
 char mqtt_server[MQTT_SERVER_LEN_MAX];// = "192.168.1.52";//"m14.cloudmqtt.com"; // Имя сервера MQTT
 char mqtt_port[MQTT_PORT_LEN_MAX];// = 1883;//15303; // Порт для подключения к серверу MQTT
 char mqtt_user[MQTT_USER_LEN_MAX];// = "";//"aNano1"; // Логи от сервер

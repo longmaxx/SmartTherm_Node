@@ -11,9 +11,11 @@
 #include <Ticker.h>
 #include "Options.h"
 #include <FS.h>
-
+#include "FileManagement.h"
 bool flagSleep = false;
 Ticker ticker;// task timer
+
+#define DBG_PORT Serial
 
 String HostIP = "192.168.1.110:80";
 String Url = "/web/index.php?r=temperatures/commit";
@@ -37,17 +39,18 @@ WiFiClient wclient;
 
 ESP8266WebServer server(80);
 File fsUploadFile;
+FileManagement  FManager(DBG_PORT);
 
 /*
 12(D6) - 1-Wire ( DHT22)
-14() - 1-wire DS18b20 
+14(D5) - 1-wire DS18b20 
 16(D0) connect to RST for SLEEP WAKE UP work
 13 - Btn Config. Pull-Up to enable web interface
 */
 #define PIN_DHT (12)
 #define PIN_1WIRE (14)
 #define PIN_BTN_CONFIG (13)
-#define DBG_PORT Serial
+
 
 #define PIN_BTN_STATE_ENABLED (1)
 
@@ -67,7 +70,6 @@ boolean flag_HttpSensorJob = true;// timer flag for refresh Sensor data and send
 //PubSubClient mqtt_client(wclient, mqtt_server, mqtt_port);
 //PubSubClient mqtt_client((uint8_t*)mqtt_server,(uint16_t) mqtt_port, (Client)wclient);
 PubSubClient mqtt_client(wclient);
-boolean mqtt_enabled = false;
 
 void setup() {
   pinMode(PIN_BTN_CONFIG,INPUT);
@@ -75,11 +77,13 @@ void setup() {
   DBG_PORT.begin(115200);
   DBG_PORT.println("");
   DBG_PORT.println("Setup...");
-  SPIFFS.begin();
+  
   checkBtnConfigState(); 
+  FManager.ListAllFiles();
   initMQTT();
   initWifi();
   initDS18B20();
+  
   ticker.attach(30,setHttpSensorJobFlag);
 }
 
@@ -90,7 +94,7 @@ void loop() {
     if(mqtt_enabled)
       mqttConnect();
     Job_DHT();
-    Job_DS18B20();
+    Job_DS18B20();// start DS18B20 job
   }
   if (oneWire_Phaze != ONEWIRE_PHAZE_IDLE)
     Job_DS18B20();
@@ -115,15 +119,16 @@ void checkBtnConfigState()
 
 void readWifiSettingsFromFlash()
 {
-  readFileLine(opt_wifi_file, opt_wifi_ssid_i, ssidWiFi, WIFI_SSID_LEN_MAX);
-  readFileLine(opt_wifi_file, opt_wifi_password_i, passwordWiFi, WIFI_PASSWORD_LEN_MAX);
+  FManager.readFileLine(opt_wifi_file, opt_wifi_ssid_i, ssidWiFi, WIFI_SSID_LEN_MAX);
+  FManager.readFileLine(opt_wifi_file, opt_wifi_password_i, passwordWiFi, WIFI_PASSWORD_LEN_MAX);
 }
 void readMqttSettingsFromFlash()
 {
-  readFileLine(opt_mqtt_file, opt_mqtt_server_i, mqtt_server, MQTT_SERVER_LEN_MAX);
-  readFileLine(opt_mqtt_file, opt_mqtt_port_i, mqtt_port, WIFI_SSID_LEN_MAX);
-  readFileLine(opt_mqtt_file, opt_mqtt_user_i, mqtt_user, MQTT_USER_LEN_MAX);
-  readFileLine(opt_mqtt_file, opt_mqtt_password_i, mqtt_password, MQTT_PASSWORD_LEN_MAX);
+  FManager.readFileLine(opt_mqtt_file, opt_mqtt_enabled_i, mqtt_enabled);
+  FManager.readFileLine(opt_mqtt_file, opt_mqtt_server_i, mqtt_server, MQTT_SERVER_LEN_MAX);
+  FManager.readFileLine(opt_mqtt_file, opt_mqtt_port_i, mqtt_port, WIFI_SSID_LEN_MAX);
+  FManager.readFileLine(opt_mqtt_file, opt_mqtt_user_i, mqtt_user, MQTT_USER_LEN_MAX);
+  FManager.readFileLine(opt_mqtt_file, opt_mqtt_password_i, mqtt_password, MQTT_PASSWORD_LEN_MAX);
 }
 
 void Job_DS18B20()
@@ -205,9 +210,9 @@ void initDS18B20()
 
 void initMQTT()
 {
+  readMqttSettingsFromFlash();
   if (mqtt_enabled)
   {
-    readMqttSettingsFromFlash();
     String srv(mqtt_server);
     mqtt_client.set_server(srv,String(mqtt_port).toInt());
   }
@@ -283,7 +288,7 @@ void mqtt_sendDHTCelsium()
     DBG_PORT.println(F("Cancel publish mqtt celsium due to errors"));
   }
 }
-
+//============================== DHT=============================================
 void mqtt_sendDHTHumidity()
 {
   if ((lastSensorData.stateDHT == STATE_OK))
@@ -321,7 +326,7 @@ void printSensorData_DHT()
   }
   DBG_PORT.println("");
 }
-
+//====================================MQTT===================================================
 void mqttConnect()
 {
   if (!mqtt_client.connected()) {
@@ -372,18 +377,8 @@ String firstZero(int val)
     return (String)val;
   }
 }
-//====================== SPIFFS ========================================
-String formatBytes(size_t bytes){
-  if (bytes < 1024){
-    return String(bytes)+"B";
-  } else if(bytes < (1024 * 1024)){
-    return String(bytes/1024.0)+"KB";
-  } else if(bytes < (1024 * 1024 * 1024)){
-    return String(bytes/1024.0/1024.0)+"MB";
-  } else {
-    return String(bytes/1024.0/1024.0/1024.0)+"GB";
-  }
-}
+//=======================WebServer======================================
+
 String getContentType(String filename){
   if(server.hasArg("download")) return "application/octet-stream";
   else if(filename.endsWith(".htm")) return "text/html";
@@ -405,67 +400,18 @@ bool handleFileRead(String path){
   if(path.endsWith("/")) path += "index.htm";
   String contentType = getContentType(path);
   String pathWithGz = path + ".gz";
-  if(SPIFFS.exists(pathWithGz) || SPIFFS.exists(path)){
-    if(SPIFFS.exists(pathWithGz))
-      path += ".gz";
-    File file = SPIFFS.open(path, "r");
-    server.streamFile(file, contentType);
+  
+  File file = FManager.getFileR(pathWithGz);
+  if (!file)
+      file = FManager.getFileR(path);
+  if (file)
+  {    
+    server.streamFile(file, contentType);    
     file.close();
     return true;
   }
   return false;
 }
-//================options to flash======================================
-void saveOptionToFlash(String fileName, String textOpt)
-{
-  SPIFFS.remove(fileName);
-  File file = SPIFFS.open(fileName, "w+");
-  file.println(textOpt);
-  file.close();
-}
-
-int readFileLine(String fileName, int iLine, char* buf, int len)
-{
-  File file = SPIFFS.open(fileName, "r");
-  bool hasLine = fileGotoLine(file, iLine);
-  int lenRead = 0;
-  if (hasLine)
-    lenRead = file.readBytesUntil('\r', buf, len);
-  else {
-    buf[0] = '\0';
-    //DBG_PORT.print("no line");
-  }
-  file.close();
-  DBG_PORT.write("Read ");
-  DBG_PORT.print(fileName);
-  DBG_PORT.write(" line: ");
-  String s = String(*buf);
-  DBG_PORT.write((uint8_t*)buf,lenRead);
-  DBG_PORT.write("\r\n");
-  return lenRead;
-}
-
-bool fileGotoLine(File file, int iLine)
-{
-  int len = 50;
-  char buf[50];
-  file.seek(0,SeekSet);
-  if (iLine == 0) return true;
-  for (int i = 0; i < iLine; i++)
-  {
-    //DBG_PORT.write("GOTOLine=");
-    //DBG_PORT.print(i, DEC);
-    int l = file.readBytesUntil('\n',buf,len);
-    //DBG_PORT.write((uint8_t*)buf,l);
-    //DBG_PORT.println("");
-    if (file.position() == file.size()) {
-      //DBG_PORT.println("Fail. End of file!");
-      return false;
-    }
-  }
-  return true;
-}
-//=======================WebServer======================================
 void handleFileUpload(){
   if(server.uri() != "/edit") return;
   HTTPUpload& upload = server.upload();
@@ -473,7 +419,7 @@ void handleFileUpload(){
     String filename = upload.filename;
     if(!filename.startsWith("/")) filename = "/"+filename;
     DBG_PORT.print("handleFileUpload Name: "); DBG_PORT.println(filename);
-    fsUploadFile = SPIFFS.open(filename, "w");
+    fsUploadFile = FManager.getFileW(filename);
     filename = String();
   } else if(upload.status == UPLOAD_FILE_WRITE){
     //DBG_PORT.print("handleFileUpload Data: "); DBG_PORT.println(upload.currentSize);
@@ -492,9 +438,9 @@ void handleFileDelete(){
   DBG_PORT.println("handleFileDelete: " + path);
   if(path == "/")
     return server.send(500, "text/plain", "BAD PATH");
-  if(!SPIFFS.exists(path))
+  if(!FManager.fileExists(path))
     return server.send(404, "text/plain", "FileNotFound");
-  SPIFFS.remove(path);
+  FManager.fileRemove(path);
   server.send(200, "text/plain", "");
   path = String();
 }
@@ -506,9 +452,9 @@ void handleFileCreate(){
   DBG_PORT.println("handleFileCreate: " + path);
   if(path == "/")
     return server.send(500, "text/plain", "BAD PATH");
-  if(SPIFFS.exists(path))
+  if(FManager.fileExists(path))
     return server.send(500, "text/plain", "FILE EXISTS");
-  File file = SPIFFS.open(path, "w");
+  File file = FManager.getFileW(path);
   if(file)
     file.close();
   else
@@ -522,7 +468,7 @@ void handleFileList() {
   
   String path = server.arg("dir");
   DBG_PORT.println("handleFileList: " + path);
-  Dir dir = SPIFFS.openDir(path);
+  Dir dir = FManager.openDir(path);
   path = String();
 
   String output = "[";
@@ -571,7 +517,7 @@ void handleSetWiFi()
     }
     //server.arg("ssid").toCharArray(ssidWiFi,20);
     //server.arg("password").toCharArray(passwordWiFi,30);
-    saveOptionToFlash(opt_wifi_file,server.arg("ssid") + "\r\n" + server.arg("password"));
+    FManager.saveOptionToFlash(opt_wifi_file,server.arg("ssid") + "\r\n" + server.arg("password"));
     initWifi();
     handleGetWiFi();
   }else if (server.args() >0){
@@ -635,10 +581,10 @@ void handleGetDS18B20Alias()
   if (server.hasArg(arg_ds18b20_name)){
     // we save new name
     DBG_PORT.println("Saving DS18b20 alias: "+server.arg(arg_ds18b20_id) + " = " +server.arg(arg_ds18b20_name) );
-    SPIFFS.remove(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id));
+    FManager.fileRemove(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id));
     if (server.arg(arg_ds18b20_name) != "")// don't create file fr empty name
     {
-      File f = SPIFFS.open(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id),"w+");
+      File f = FManager.getFileWCreate(opt_ds18b20_alias_files + server.arg(arg_ds18b20_id));
       f.print(server.arg(arg_ds18b20_name));
       f.close();
     }
@@ -655,9 +601,9 @@ String getDs18b20Alias(String id)
     char buf[20];
     buf[0] = '\0';
     String path = opt_ds18b20_alias_files + id;
-    if (SPIFFS.exists(path))
+    if (FManager.fileExists(path))
     {
-      File f = SPIFFS.open(path, "r");
+      File f = FManager.getFileR(path);
       if (f)
       {
         int len = f.read((uint8_t*)buf,20);
@@ -674,18 +620,10 @@ String getDs18b20Alias(String id)
     }
     return String(buf);
 }
-void initWebServer()
+
+void initWeb_FileManager() 
 {
-  {
-    Dir dir = SPIFFS.openDir("/");
-    while (dir.next()) {    
-      String fileName = dir.fileName();
-      size_t fileSize = dir.fileSize();
-      DBG_PORT.printf("FS File: %s, size: %s\n", fileName.c_str(), formatBytes(fileSize).c_str());
-    }
-    DBG_PORT.printf("\n");
-  }
-    //list directory
+  //list directory
   server.on("/list", HTTP_GET, handleFileList);
   //load editor
   server.on("/edit", HTTP_GET, [](){
@@ -698,14 +636,24 @@ void initWebServer()
   //first callback is called after the request has ended with all parsed arguments
   //second callback handles file uploads at that location
   server.on("/edit", HTTP_POST, [](){ server.send(200, "text/plain", ""); }, handleFileUpload);
+}
+
+void initWeb_WebPage()
+{
   server.on("/",HTTP_GET,handleGetWebRoot);
-    //server.on("/list", HTTP_GET, handleFileList);
+  //server.on("/list", HTTP_GET, handleFileList);
   server.on ("/wifi",HTTP_POST,handleSetWiFi);
   server.on ("/wifi",HTTP_GET, handleGetWiFi);
   server.on ("/mqtt",HTTP_POST,handleSetMQTT);
   server.on ("/mqtt",HTTP_GET, handleGetMQTT);
   server.on ("/data",HTTP_GET, handleGetData);
   server.on("/ds18b20/alias",HTTP_GET,handleGetDS18B20Alias);
+}
+
+void initWebServer()
+{
+  initWeb_FileManager();
+  initWeb_WebPage();
   server.onNotFound([](){
     if(!handleFileRead(server.uri()))
       server.send(404, "text/plain", "FileNotFound");

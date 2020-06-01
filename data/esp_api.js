@@ -75,7 +75,7 @@ function callback_get_wifi_settings(data)
 	if (typeof(data) == "string"){
 		data = JSON.parse(data)
 	}
-	alert(JSON.stringify(data));
+	//alert(JSON.stringify(data));
 	var selSSID = $("#wifi_ssid");	
 	$.each(data.networks, function (index, name){selSSID.append('<option value="'+name+'">'+name+'</option>')});
 	
